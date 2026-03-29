@@ -42,7 +42,7 @@ class PortfolioRiskEngine:
         # Build a dict of symbol -> greeks for quick lookup
         greeks_map = {g["symbol"]: g for g in greeks_list}
 
-        capital = float(balances.get("net_asset", balances.get("equity", 100000)) or 100000)
+        capital = float(balances.get("total_assets", 100000) or 100000)
         max_trade_value = 0.05 * capital
 
         # Merge greeks into positions

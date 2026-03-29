@@ -42,7 +42,7 @@ class Orchestrator:
             repo = ScanRepository(db)
             scan_run = repo.create_scan_run(started_at=started, metadata_json={"interval": self.settings.scan_interval_minutes})
 
-            scanner = MonitoringScanner(self.massive, self.cache, repo)
+            scanner = MonitoringScanner(self.moomoo, self.cache, repo)
             overreaction = OverreactionAnalyzer(self.massive, self.gemini)
             volatility = VolatilityAnalyzer(self.massive)
             trends = TrendAnalyzer(self.massive)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -16,6 +16,12 @@ class MassiveRateLimitError(RuntimeError):
 
 
 class MassiveClient:
+    """Massive REST API client for underlying stock and index data.
+    
+    Provides market data for equities, indices, and fundamental analysis.
+    
+    API Reference: https://massive.com/docs/rest/stocks/tickers/ticker-overview
+    """
     def __init__(self) -> None:
         settings = get_settings()
         self.base_url = settings.massive_base_url.rstrip("/")
@@ -50,25 +56,15 @@ class MassiveClient:
         response.raise_for_status()
         return response.json()
 
-    def get_options_chain_snapshot(self, symbol: str) -> list[dict[str, Any]]:
-        data = self._get("/v3/snapshot/options", {"underlying_ticker": symbol})
-        return data.get("results", [])
-
-    def get_options_trades(self, option_symbol: str) -> list[dict[str, Any]]:
-        data = self._get(f"/v3/trades/{option_symbol}")
-        return data.get("results", [])
-
     def get_underlying_bars(self, symbol: str, timespan: str = "day", limit: int = 365) -> list[dict[str, Any]]:
         data = self._get(f"/v2/aggs/ticker/{symbol}/range/1/{timespan}/2020-01-01/{datetime.utcnow().date()}", {"limit": limit})
         return data.get("results", [])
-
-    def get_iv_snapshot(self, option_symbol: str) -> dict[str, Any]:
-        return self._get(f"/v3/snapshot/options/{option_symbol}")
 
     def get_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
         data = self._get("/v2/reference/news", {"ticker": symbol, "limit": limit})
         return data.get("results", [])
 
+    # TO-DO: fix this endpoint; does not exist
     def get_earnings_calendar(self, symbol: str) -> list[dict[str, Any]]:
         data = self._get("/vX/reference/earnings", {"ticker": symbol})
         return data.get("results", [])
@@ -77,7 +73,24 @@ class MassiveClient:
         data = self._get("/v3/reference/dividends", {"ticker": symbol})
         return data.get("results", [])
 
-    def get_index_snapshot(self, symbol: str) -> dict[str, Any]:
-        data = self._get("/v2/snapshot/locale/us/markets/stocks/tickers", {"tickers": symbol})
-        results = data.get("tickers", [])
+    def get_index_bars(self, symbol: str, days: int = 5) -> dict[str, Any]:
+        """Get recent OHLC bars for an index using the custom bars endpoint.
+        
+        Args:
+            symbol: Index ticker (e.g., 'I:NDX', 'I:VIX', 'SPY')
+            days: Number of days to look back
+            
+        Returns:
+            The latest bar as a dict with c (close), o (open), h (high), l (low), t (timestamp)
+            Returns empty dict if no data available.
+        """
+        to_date = datetime.utcnow().date()
+        from_date = to_date - timedelta(days=days)
+        
+        data = self._get(
+            f"/v2/aggs/ticker/{symbol}/range/1/day/{from_date.isoformat()}/{to_date.isoformat()}",
+            {"sort": "desc", "limit": days}
+        )
+        
+        results = data.get("results", [])
         return results[0] if results else {}

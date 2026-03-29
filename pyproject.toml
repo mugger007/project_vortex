@@ -44,6 +44,16 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+  "live: marks tests that hit live external providers",
+  "e2e: marks end-to-end live pipeline tests"
+]
+filterwarnings = [
+  "ignore:Call to deprecated create function EnumValueDescriptor:DeprecationWarning:moomoo.*",
+  "ignore:Call to deprecated create function FileDescriptor:DeprecationWarning:moomoo.*",
+  "ignore:setDaemon.*is deprecated:DeprecationWarning:moomoo.*",
+  "ignore:datetime.datetime.utcfromtimestamp.*is deprecated:DeprecationWarning:google.*"
+]
 
 [tool.setuptools]
 include-package-data = true

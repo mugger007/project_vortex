@@ -12,7 +12,7 @@ Use this checklist to ensure the system is properly configured before running in
 
 ## Configuration
 
-- [ ] `.env` file exists (copied from `.env.example`)
+- [ ] `.env` file exists (created manually in project root)
 - [ ] `.env` is in `.gitignore` (never commit secrets)
 - [ ] All required env vars filled:
   - [ ] `MASSIVE_API_KEY` (valid, not placeholder)

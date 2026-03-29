@@ -8,11 +8,13 @@ class MarketRegimeAnalyzer:
         self.massive = massive
 
     def analyze(self, symbol: str) -> tuple[float, str]:
-        vix = self.massive.get_index_snapshot("I:VIX")
-        spy = self.massive.get_index_snapshot("SPY")
+        vix = self.massive.get_index_bars("I:VIX")
+        spy = self.massive.get_index_bars("SPY")
 
-        vix_value = float(vix.get("day", {}).get("c", 20.0) or 20.0)
-        spy_change = float(spy.get("todaysChangePerc", 0.0) or 0.0)
+        vix_value = float(vix.get("c", 20.0))
+        spy_close = float(spy.get("c", 0.0))
+        spy_open = float(spy.get("o", 0.0))
+        spy_change = ((spy_close - spy_open) / spy_open * 100) if spy_open else 0.0
 
         if vix_value > 28:
             vol_state = "high-vol"

@@ -10,15 +10,18 @@ logger = get_logger(__name__)
 
 
 class MoomooClient:
-    """Moomoo OpenAPI client using the official Python SDK.
+    """Moomoo OpenAPI client using the official Python SDK via local OpenD daemon.
 
-    The client connects to the local OpenD daemon (default localhost:11111).
+    The OpenD daemon provides all data through a local binary protocol connection (localhost:11111).
     OpenD must be installed and running: https://www.moomoo.com/download/OpenAPI
 
-    Architecture:
-    - Quote context: snapshot, options chain, Greeks.
-    - Trade context: account balances, positions.
-    - Both run via local binary protocol (not REST).
+    Methods available:
+    - Account/Portfolio: get_account_balances(), get_option_positions()
+    - Options: get_option_expiration_date(), get_option_chain()
+    - Position Greeks: get_position_greeks()
+    - Quotes: get_snapshot()
+    
+    All methods return moomoo-api SDK objects (typically pandas DataFrames or tuples).
     """
 
     def __init__(self) -> None:
@@ -47,10 +50,28 @@ class MoomooClient:
     def _ensure_trade_ctx(self):
         if self._trade_ctx is None:
             try:
+                from moomoo import OpenSecTradeContext, SecurityFirm, TrdMarket
+
+                # Required trade context configuration from validated working setup.
+                self._trade_ctx = OpenSecTradeContext(
+                    filter_trdmarket=TrdMarket.US,
+                    host="127.0.0.1",
+                    port=11111,
+                    security_firm=SecurityFirm.FUTUSG,
+                )
+                logger.info(
+                    "moomoo_trade_context_opened",
+                    host="127.0.0.1",
+                    port=11111,
+                    filter_trdmarket="US",
+                    security_firm="FUTUSG",
+                )
+            except TypeError:
+                # Fallback for SDK variants that do not support filter_trdmarket/security_firm.
                 from moomoo import OpenSecTradeContext
 
-                self._trade_ctx = OpenSecTradeContext(host=self.host, port=self.port)
-                logger.info("moomoo_trade_context_opened", host=self.host, port=self.port)
+                self._trade_ctx = OpenSecTradeContext(host="127.0.0.1", port=11111)
+                logger.info("moomoo_trade_context_opened_fallback", host="127.0.0.1", port=11111)
             except ImportError as e:
                 logger.error("moomoo_import_error", error=str(e))
                 raise RuntimeError(
@@ -61,23 +82,70 @@ class MoomooClient:
                 raise
 
     def get_account_balances(self, account_id: str | None = None) -> dict[str, Any]:
-        """Get account balance and equity details."""
+        """Get account balance and equity details.
+        
+        Uses accinfo_query() from Moomoo SDK to fetch fund data including power, assets, and cash.
+        API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/trade/get-funds.html
+        """
         self._ensure_trade_ctx()
+
+        def _to_float(value: Any, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                if isinstance(value, str) and value.strip().upper() in {"N/A", "NA", "NULL", "NONE", ""}:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
         try:
-            ret, data = self._trade_ctx.get_acc_balance()
+            from moomoo import TrdEnv
+
+            ret, data = self._trade_ctx.accinfo_query(
+                trd_env=TrdEnv.REAL,
+                acc_id=int(account_id) if account_id else 0,
+                acc_index=0,
+                refresh_cache=False,
+            )
             if ret == 0 and data is not None:
-                # Convert DataFrame to dict for JSON serialization
+                # Convert DataFrame to dict for JSON serialization.
+                first = data.iloc[0] if len(data) > 0 else None
                 return {
-                    "net_asset": float(data.iloc[0]["net_asset"]) if len(data) > 0 else 0.0,
-                    "equity": float(data.iloc[0]["total_assets"]) if len(data) > 0 else 0.0,
+                    "trd_env": "REAL",
+                    "power": _to_float(first.get("power", 0.0)) if first is not None else 0.0,
+                    "net_cash_power": _to_float(first.get("net_cash_power", 0.0)) if first is not None else 0.0,
+                    "total_assets": _to_float(first.get("total_assets", 0.0)) if first is not None else 0.0,
+                    "securities_assets": _to_float(first.get("securities_assets", 0.0)) if first is not None else 0.0,
+                    "cash": _to_float(first.get("cash", 0.0)) if first is not None else 0.0,
+                    "market_val": _to_float(first.get("market_val", 0.0)) if first is not None else 0.0,
+                    # Backward-compatible aliases for existing consumers.
+                    "net_asset": _to_float(first.get("total_assets", 0.0)) if first is not None else 0.0,
+                    "equity": _to_float(first.get("total_assets", 0.0)) if first is not None else 0.0,
+                    "currency": str(first.get("currency", "")) if first is not None else "",
                     "raw": data.to_dict("records"),
                 }
-            else:
-                logger.error("moomoo_balance_error", ret=ret)
-                return {"net_asset": 0.0, "equity": 0.0, "error": f"ret={ret}"}
+
+            details = f"REAL: ret={ret}, detail={data}"
+            logger.error("moomoo_accinfo_error", detail=details)
+            return {
+                "power": 0.0,
+                "net_cash_power": 0.0,
+                "total_assets": 0.0,
+                "net_asset": 0.0,
+                "equity": 0.0,
+                "error": details,
+            }
         except Exception as e:
-            logger.exception("moomoo_get_balances_error", error=str(e))
-            return {"net_asset": 0.0, "equity": 0.0, "error": str(e)}
+            logger.exception("moomoo_get_account_balances_error", error=str(e))
+            return {
+                "power": 0.0,
+                "net_cash_power": 0.0,
+                "total_assets": 0.0,
+                "net_asset": 0.0,
+                "equity": 0.0,
+                "error": str(e),
+            }
 
     def get_option_positions(self, account_id: str | None = None) -> list[dict[str, Any]]:
         """Get open option positions from the account.
@@ -89,31 +157,76 @@ class MoomooClient:
             List of option position dicts with symbol, qty, delta, vega, market_val, etc.
         """
         self._ensure_trade_ctx()
+
+        def _to_float(value: Any, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                if isinstance(value, str) and value.strip().upper() in {"N/A", "NA", "NULL", "NONE", ""}:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _convert_positions(data: Any, env_name: str) -> list[dict[str, Any]]:
+            positions: list[dict[str, Any]] = []
+            for _, row in data.iterrows():
+                ticker = str(row.get("code", ""))
+                sec_type = str(row.get("sec_type", "")).upper()
+                stock_name = str(row.get("stock_name", ""))
+
+                # Keep this method option-focused but support multiple schema variants.
+                is_option = (
+                    "OPTION" in sec_type
+                    or "OPTION" in stock_name.upper()
+                    or (ticker and len(ticker) > 10)
+                )
+                if not is_option:
+                    continue
+
+                qty = _to_float(row.get("qty", row.get("can_sell_qty", 0.0)))
+                market_val = _to_float(row.get("market_val", row.get("nominal_price", 0.0)))
+
+                positions.append(
+                    {
+                        "symbol": ticker,
+                        "stock_name": stock_name,
+                        "qty": qty,
+                        "quantity": qty,
+                        "delta": 0.0,  # Greeks are fetched separately via get_position_greeks
+                        "vega": 0.0,
+                        "market_val": market_val,
+                        "market_value": market_val,
+                        "sec_type": str(row.get("sec_type", "")),
+                        "trd_env": env_name,
+                        "raw": row.to_dict(),
+                    }
+                )
+            return positions
+
         try:
-            ret, data = self._trade_ctx.get_position_list_in_day()
+            from moomoo import TrdEnv
+
+            ret, data = self._trade_ctx.position_list_query(
+                trd_env=TrdEnv.REAL,
+                acc_id=int(account_id) if account_id else 0,
+                acc_index=0,
+                refresh_cache=False,
+            )
             if ret == 0 and data is not None:
-                positions = []
-                for _, row in data.iterrows():
-                    ticker = str(row.get("code", ""))
-                    # Filter for options (typically contain 'OPTION' or special formatting)
-                    if "OPTION" in str(row.get("sec_type", "")).upper() or (
-                        ticker and len(ticker) > 10
-                    ):
-                        positions.append({
-                            "symbol": ticker,
-                            "qty": float(row.get("qty", 0.0) or 0.0),
-                            "quantity": float(row.get("qty", 0.0) or 0.0),
-                            "delta": 0.0,  # Greeks will be fetched separately via get_position_greeks
-                            "vega": 0.0,
-                            "market_val": float(row.get("market_val", 0.0) or 0.0),
-                            "market_value": float(row.get("market_val", 0.0) or 0.0),
-                            "sec_type": str(row.get("sec_type", "")),
-                            "raw": row.to_dict(),
-                        })
+                positions = _convert_positions(data, "REAL")
+
+                logger.info(
+                    "moomoo_option_positions_loaded",
+                    env="REAL",
+                    total_positions=int(len(data)),
+                    option_positions=int(len(positions)),
+                )
                 return positions
-            else:
-                logger.error("moomoo_positions_error", ret=ret)
-                return []
+
+            details = f"REAL: ret={ret}, detail={data}"
+            logger.error("moomoo_positions_error", detail=details)
+            return []
         except Exception as e:
             logger.exception("moomoo_get_positions_error", error=str(e))
             return []
@@ -141,6 +254,52 @@ class MoomooClient:
                 return []
         except Exception as e:
             logger.exception("moomoo_get_greeks_error", error=str(e))
+            return []
+
+    def get_option_expiration_date(self, symbol: str) -> list[str]:
+        """Get available option expiration dates for an underlying symbol via OpenD daemon.
+        
+        Args:
+            symbol: underlying ticker code (e.g., 'HK.00700', 'US.AAPL').
+        
+        Returns:
+            List of expiration dates in format 'YYYY-MM-DD'.
+            API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-option-expiration-date.html
+        """
+        self._ensure_quote_ctx()
+        try:
+            ret, data = self._quote_ctx.get_option_expiration_date(code=symbol)
+            if ret == 0 and data is not None:
+                return data['strike_time'].values.tolist() if 'strike_time' in data.columns else []
+            else:
+                logger.error("moomoo_option_expiration_error", symbol=symbol, ret=ret)
+                return []
+        except Exception as e:
+            logger.exception("moomoo_get_expiration_error", symbol=symbol, error=str(e))
+            return []
+    
+    def get_option_chain(self, symbol: str, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:
+        """Get option chain data for an underlying symbol via OpenD daemon.
+        
+        Args:
+            symbol: underlying ticker code (e.g., 'HK.00700', 'US.AAPL').
+            start: start date for expiration (format 'YYYY-MM-DD'), default 30 days before end.
+            end: end date for expiration (format 'YYYY-MM-DD'), default 30 days after start.
+        
+        Returns:
+            List of option contracts with strike, expiry, Greeks, OI, volume, etc.
+            API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-option-chain.html
+        """
+        self._ensure_quote_ctx()
+        try:
+            ret, data = self._quote_ctx.get_option_chain(code=symbol, start=start, end=end)
+            if ret == 0 and data is not None:
+                return data.to_dict('records')
+            else:
+                logger.error("moomoo_option_chain_error", symbol=symbol, ret=ret)
+                return []
+        except Exception as e:
+            logger.exception("moomoo_get_option_chain_error", symbol=symbol, error=str(e))
             return []
 
     def get_snapshot(self, symbol: str) -> dict[str, Any]:

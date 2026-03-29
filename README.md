@@ -1,130 +1,152 @@
 # weekly-options-scanner
 
-Production-ready framework for **US equity weekly options premium-selling** (theta-decay) recommendations.
+Production-ready framework for US equity weekly options premium-selling recommendations.
 
-The system scans for extreme option premium spikes, applies hard liquidity/event/risk gates, performs multi-layer analysis, and generates **human-in-the-loop** recommendation cards. It never auto-trades.
+This application scans for large option premium jumps, applies hard filters and risk gates, runs multi-layer analysis, and produces human-review recommendation cards. It does not auto-trade.
 
-## Core Capabilities
+## What This Project Uses
 
-- FastAPI backend API for scan control and results retrieval.
-- Streamlit dashboard for monitoring opportunities and recommendation cards.
-- PostgreSQL persistence using SQLAlchemy + Alembic migrations.
-- Redis cache for snapshot deltas and low-latency state.
-- APScheduler polling loop (default every 10 minutes).
-- Massive REST market data ingestion (no continuous WebSockets).
-- Moomoo account/position ingestion via official Python SDK + local OpenD daemon.
-- Google Gemini analysis for overreaction and final synthesis.
-- Full audit trail in database for each scan stage and decision.
-- Backtesting scaffold with historical replay entrypoints.
+- FastAPI for API endpoints and scheduler lifecycle.
+- Streamlit for dashboard/UI.
+- PostgreSQL (SQLAlchemy + Alembic) for persistence.
+- Redis for snapshot and low-latency state cache.
+- Massive REST API for underlying stocks and indices data.
+- Moomoo OpenD daemon (local SDK connection) for options and account/position data.
+- Gemini for synthesis and recommendation generation.
 
-## Strategy Workflow
+## Data Source Architecture
 
-1. Poll Massive snapshots (interval from `SCAN_INTERVAL_MINUTES`, default 10).
-2. Detect weekly-expiry Friday contracts with premium jump > 500% vs previous cached snapshot.
-3. Apply hard liquidity gates:
-   - OI > 750
-   - Volume > 100/day
-   - Bid-ask spread < 10% of premium
-4. Analyze filtered contracts:
-   - News overreaction probability (Gemini)
-   - Volatility percentile (current-week HV vs historical distribution)
-   - Trend profile (EMA/MA/momentum)
-   - Event risk in next 5 days (earnings/dividend; macro hook included)
-   - Market regime (VIX + broad market proxy)
-5. Run portfolio risk checks from Moomoo account state:
-   - Max 5% capital per trade
-   - Portfolio delta/vega limits
-   - Correlation cap > 0.7 rejected
-   - Expected max drawdown check
-6. Synthesize recommendation with weighted scorecard + Gemini structured JSON output.
-7. Persist recommendation + full payload + audit logs.
-8. Alert on high-confidence setups only (optional Telegram/email).
+- Moomoo OpenD daemon (local binary protocol):
+  - Option expiration dates: `get_option_expiration_date`
+  - Option chains: `get_option_chain`
+  - Account balances, positions, Greeks, snapshots
+- Massive REST API:
+  - Underlying bars, news, earnings/dividends, index snapshot
 
-## Requirements
+Design rule: all Moomoo data is fetched through OpenD methods, not REST calls.
+
+## Prerequisites
 
 - Python 3.11+
-- PostgreSQL 14+
-- Redis 7+
-- Moomoo OpenD daemon (local installation)
-- API credentials for:
-  - Massive
-  - Google Gemini
+- Docker Desktop (or local PostgreSQL 14+ and Redis 7+)
+- Moomoo OpenD desktop app running locally
+- API credentials:
+  - `MASSIVE_API_KEY`
+  - `GEMINI_API_KEY`
 
-**See [SETUP.md](SETUP.md) for detailed installation and configuration instructions.**
+## Installation and Setup
 
-## Quick Start
+### 1. Create and activate virtual environment
 
-### 1) Clone and create environment
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS/Linux:
 
 ```bash
-python -m venv .venv
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
+### 2. Install dependencies
+
+```bash
+pip install --upgrade pip setuptools wheel
 pip install -e .
 ```
 
-### 2) Start PostgreSQL and Redis
+For development tools (pytest, mypy, ruff):
+
+```bash
+pip install -e ".[dev]"
+```
+
+### 3. Create `.env`
+
+This project does not keep `.env.example`. Create `.env` manually in project root:
+
+```env
+APP_ENV=dev
+LOG_LEVEL=INFO
+
+API_HOST=0.0.0.0
+API_PORT=8000
+STREAMLIT_PORT=8501
+
+SCAN_INTERVAL_MINUTES=10
+MAX_MASSIVE_CALLS_PER_MINUTE=5
+
+POSTGRES_DSN=postgresql+psycopg://postgres:postgres@localhost:5432/weekly_options
+REDIS_URL=redis://localhost:6379/0
+
+MASSIVE_API_KEY=your_real_massive_key
+MASSIVE_BASE_URL=https://api.massive.com
+
+MOOMOO_OPEND_HOST=127.0.0.1
+MOOMOO_OPEND_PORT=11111
+
+GEMINI_API_KEY=your_real_gemini_key
+GEMINI_MODEL=gemini-1.5-pro
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+ALERT_EMAIL_TO=
+ALERT_EMAIL_FROM=
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+
+BACKTEST_MODE=false
+```
+
+### 4. Start infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-### 3) Configure environment
+Verify:
 
-Copy `.env.example` to `.env` and fill credentials.
+```bash
+docker ps
+```
 
-**Important**: `.env` is listed in `.gitignore` and should never be committed. It contains your real secrets.
-
-### 4) Run migrations
+### 5. Run migrations
 
 ```bash
 alembic upgrade head
 ```
 
-### 5) Start backend API + scheduler
-
-```bash
-python -m app --mode api
-```
-
-API will run on `http://0.0.0.0:8000` by default and scheduler starts in-process.
-
-### 6) Start dashboard
-
-```bash
-streamlit run app/dashboard/streamlit_app.py --server.port 8501
-```
-
-Open `http://localhost:8501`.
-
-## Run Modes
-
-### API mode (default)
-
-```bash
-python -m app --mode api
-```
-
-Starts FastAPI and scheduler.
-
-### Scheduler-only mode
-
-```bash
-python -m app --mode scheduler
-```
-
-Runs scanner loop without API server.
-
-### One-shot scan
+### 6. Verify with one scan
 
 ```bash
 python -m app --mode scan-once
 ```
 
-### Backtest replay mode (stub scaffold)
+## Running the App
+
+### API + scheduler
 
 ```bash
+python -m app --mode api
+```
+
+### Dashboard
+
+```bash
+streamlit run app/dashboard/streamlit_app.py --server.port 8501
+```
+
+### Other modes
+
+```bash
+python -m app --mode scheduler
+python -m app --mode scan-once
 python -m app --mode backtest --backtest-start 2024-01-01 --backtest-end 2024-12-31 --backtest-symbols SPY,QQQ,NVDA
 ```
 
@@ -134,191 +156,89 @@ python -m app --mode backtest --backtest-start 2024-01-01 --backtest-end 2024-12
 - `POST /api/scan/run`
 - `GET /api/recommendations?limit=50`
 
-## Rate-Limit Notes
+## Testing
 
-- The scanner is **polling-based**, never continuous WebSocket.
-- Poll interval is controlled by `SCAN_INTERVAL_MINUTES` (default 10).
-- Massive calls are throttled through a per-minute limiter with retry/backoff.
-- Set `MAX_MASSIVE_CALLS_PER_MINUTE=5` for free-tier safety.
+The test suite is now live-oriented under `tests/live` and safely gated.
 
-## Configuration Reference
-
-### Core runtime
-
-- `APP_ENV`: environment tag (`dev`, `staging`, `prod`)
-- `LOG_LEVEL`: logging level
-- `API_HOST`, `API_PORT`: FastAPI bind settings
-- `STREAMLIT_PORT`: dashboard port
-
-### Scanning/rate limits
-
-- `SCAN_INTERVAL_MINUTES`: polling interval for scanner (default 10)
-- `MAX_MASSIVE_CALLS_PER_MINUTE`: local throttling cap
-
-### Infrastructure
-
-- `POSTGRES_DSN`: SQLAlchemy DSN
-- `REDIS_URL`: Redis connection string
-
-### Data providers
-
-- `MASSIVE_API_KEY`, `MASSIVE_BASE_URL`: Massive market data provider
-- `MOOMOO_OPEND_HOST`, `MOOMOO_OPEND_PORT`: Local OpenD daemon (default 127.0.0.1:11111)
-- `GEMINI_API_KEY`, `GEMINI_MODEL`: Google Generative AI
-
-### Optional alerts
-
-- Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-- Email: `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
-
-### Backtesting
-
-- `BACKTEST_MODE`: toggle helper for deployment context
-
-## Observability and Audit Trail
-
-- Structured JSON logs via `structlog`.
-- Every scan run persisted in `scan_runs`.
-- Every recommendation persisted in `recommendations` with full payload.
-- Every stage decision/error persisted in `audit_logs`.
-- Daily option/account snapshots persisted in `snapshot_cache` and `position_snapshots`.
-
-## Project Structure
-
-```
-weekly-options-scanner/
-  app/
-    __init__.py                     # package marker
-    __main__.py                     # CLI entrypoint (api/scheduler/scan-once/backtest)
-    config.py                       # .env-based settings model
-    logging.py                      # structlog configuration
-    scheduler.py                    # APScheduler setup with interval polling
-    api/
-      __init__.py
-      main.py                       # FastAPI app + lifespan startup/shutdown
-      routes.py                     # health, scan trigger, recommendations endpoints
-    analysis/
-      __init__.py
-      overreaction.py               # Massive news + Gemini overreaction score
-      volatility.py                 # current-week HV vs historical percentile
-      trends.py                     # EMA/MA/momentum trend scoring
-      event_risk.py                 # earnings/dividend near-term flags
-      market_regime.py              # VIX/index regime scoring
-    backtest/
-      __init__.py
-      replay.py                     # historical replay stub and contract
-    cache/
-      __init__.py
-      redis_client.py               # Redis JSON/float cache wrapper
-    clients/
-      __init__.py
-      massive_client.py             # Massive REST adapter with throttle/retry
-      moomoo_client.py              # Moomoo OpenAPI adapter for balances/positions/greeks
-      gemini_client.py              # Gemini text->JSON adapter
-    db/
-      __init__.py
-      session.py                    # SQLAlchemy engine + session context manager
-      repositories.py               # persistence operations and audit methods
-    models/
-      __init__.py                   # model exports
-      base.py                       # SQLAlchemy declarative base
-      entities.py                   # ORM entities: scans, snapshots, recs, audit
-      schemas.py                    # pydantic domain schemas
-    risk/
-      __init__.py
-      portfolio_engine.py           # position sizing, exposure, correlation, drawdown checks
-    scanner/
-      __init__.py
-      filters.py                    # hard liquidity and weekly expiry filters
-      monitoring_scanner.py         # spike detection and candidate generation
-    services/
-      __init__.py
-      alerts.py                     # telegram/email alerts for high-confidence setups
-      orchestrator.py               # end-to-end pipeline coordinator
-    synthesis/
-      __init__.py
-      prompt_builder.py             # detailed Gemini synthesis prompt
-      recommendation_engine.py      # weighted scorecard + Gemini recommendation
-    dashboard/
-      __init__.py
-      streamlit_app.py              # Streamlit monitoring UI
-    utils/
-      __init__.py
-      time.py                       # UTC helper
-  alembic/
-    env.py                          # Alembic runtime config
-    script.py.mako                  # migration template
-    versions/
-      0001_init.py                  # initial schema migration
-  alembic.ini                       # Alembic config
-  docker-compose.yml                # local postgres + redis
-  pyproject.toml                    # project metadata + dependencies
-  .env.example                      # environment template
-  README.md                         # operational documentation
-  tests/                            # test package placeholder
-```
-
-## Monitoring Tips
-
-- Use `GET /api/health` for liveness.
-- Inspect `recommendations` and `audit_logs` tables for decision traceability.
-- Keep scheduler interval at 10 minutes or more on free Massive plans.
-- Watch for repeated 429 errors in logs and increase interval if needed.
-
-## Running Tests
-
-Run integration tests with mocked responses:
+### Default run (safe)
 
 ```bash
-pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Tests cover:
-- Massive client rate-limiting and error handling
-- Moomoo OpenAPI client lifecycle and data parsing
-- Scanner spike detection and liquidity filters
-- API endpoint responses and request/response validation
+- Runs non-live checks.
+- Live tests are skipped unless explicitly enabled.
 
-See `tests/` for full test suite.
+### Run live smoke and live unit tests
+
+```bash
+pytest tests/live -v --run-live -m "live and not e2e"
+```
+
+### Run full live suite including end-to-end
+
+```bash
+pytest tests/live -v --run-live
+```
+
+### Live test prerequisites and skip behavior
+
+Live tests automatically skip when prerequisites are missing:
+
+- `MASSIVE_API_KEY` missing/placeholder
+- Moomoo OpenD socket unavailable at `MOOMOO_OPEND_HOST:MOOMOO_OPEND_PORT`
+- `GEMINI_API_KEY` missing/placeholder (for e2e)
+- PostgreSQL/Redis unreachable (for e2e)
+
+Optional symbol overrides for live tests:
+
+- `LIVE_MASSIVE_SYMBOL` (default `SPY`)
+- `LIVE_MOOMOO_QUOTE_SYMBOL` (default `US.AAPL`)
+- `LIVE_MOOMOO_OPTION_SYMBOL` (default `US.AAPL`)
 
 ## Troubleshooting
 
-### No recommendations generated
+### Moomoo connection refused
 
-- Confirm Massive API key is valid and returning options snapshots.
-- Validate scanner watchlist symbols.
-- Check hard gates (OI, volume, spread) and >500% spike requirement are naturally strict.
-- Query `audit_logs` for rejection reasons.
+- Ensure OpenD app is running and logged in.
+- Confirm OpenD host/port match `.env`.
 
-### FastAPI starts but dashboard fails
+### PostgreSQL connection failures
 
-- Ensure API host/port is reachable from Streamlit.
-- If binding to `0.0.0.0`, dashboard can still use `localhost` endpoint.
+- Confirm Docker containers are running.
+- Validate `POSTGRES_DSN` in `.env`.
 
-### Migration errors
+### Redis connection failures
 
-- Verify `POSTGRES_DSN` is correct.
-- Re-run `alembic upgrade head` after database is up.
+- Confirm Redis container is running.
+- Validate `REDIS_URL` in `.env`.
 
-### Moomoo data errors
+### Massive 429 rate-limit errors
 
-**Error**: `ConnectionRefusedError` when accessing Moomoo positions
+- Increase `SCAN_INTERVAL_MINUTES`.
+- Reduce watchlist size.
+- Keep `MAX_MASSIVE_CALLS_PER_MINUTE` conservative.
 
-**Likely cause**: OpenD daemon is not running.
+### Gemini auth failures
 
-**Solution**:
-1. Open Moomoo OpenD desktop application (download from https://www.moomoo.com/download/OpenAPI)
-2. Log in with your account
-3. Verify it shows "Ready" status and is listening on localhost:11111
-4. Re-run your scan or API
+- Verify `GEMINI_API_KEY` value.
+- Restart app after updating `.env`.
 
-**Note**: OpenD daemon must remain running in the background. It's a persistent process, not started/stopped automatically.
+## Operational Notes
 
-## Production Hardening Checklist
+- Keep OpenD running during scans.
+- Use `audit_logs` and `recommendations` tables for decision traceability.
+- Scheduler interval defaults to 10 minutes; tune based on provider limits.
 
-- Add secrets manager (Vault/SM/KMS) instead of plaintext `.env`.
-- Add message queue worker for asynchronous scans/alerts.
-- Add metrics (Prometheus) and trace IDs in logs.
-- Add full integration tests and historical replay correctness checks.
-- Add explicit sector-mapping and macro calendar endpoint integration.
+## Project Layout (Key Paths)
+
+- `app/clients/massive_client.py`
+- `app/clients/moomoo_client.py`
+- `app/scanner/monitoring_scanner.py`
+- `app/services/orchestrator.py`
+- `app/api/main.py`
+- `tests/live/`
+
+## Status
+
+Ready for local deployment and live-provider validation with gated test execution.

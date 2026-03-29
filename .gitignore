@@ -47,11 +47,19 @@ venv.bak/
 # Testing and coverage
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.ruff_cache/
+.hypothesis/
+
+# Notebook and local runtime caches
+.ipynb_checkpoints/
+.cache/
+.python-version
 
 # Database
 *.db
@@ -64,3 +72,6 @@ logs/
 
 # Local development
 .streamlit/
+
+# Test artifacts and local outputs
+artifacts/
