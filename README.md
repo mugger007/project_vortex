@@ -1,244 +1,101 @@
 # weekly-options-scanner
 
-Production-ready framework for US equity weekly options premium-selling recommendations.
+Production framework for US equity weekly options premium-selling recommendations.
 
-This application scans for large option premium jumps, applies hard filters and risk gates, runs multi-layer analysis, and produces human-review recommendation cards. It does not auto-trade.
+The system scans for large option-premium jumps, applies hard filters/risk gates, runs analysis + synthesis, and outputs reviewable recommendation cards. It does not auto-trade.
 
-## What This Project Uses
+## Data Provider Responsibilities
 
-- FastAPI for API endpoints and scheduler lifecycle.
-- Streamlit for dashboard/UI.
-- PostgreSQL (SQLAlchemy + Alembic) for persistence.
-- Redis for snapshot and low-latency state cache.
-- Massive REST API for underlying stocks and indices data.
-- Moomoo OpenD daemon (local SDK connection) for options and account/position data.
-- Gemini for synthesis and recommendation generation.
-
-## Data Source Architecture
-
-- Moomoo OpenD daemon (local binary protocol):
-  - Option expiration dates: `get_option_expiration_date`
-  - Option chains: `get_option_chain`
-  - Account balances, positions, Greeks, snapshots
+- Moomoo OpenD (local SDK):
+  - Option expiration dates and option chains
+  - Account funds, positions, and position Greeks
+  - Quote snapshots
 - Massive REST API:
-  - Underlying bars, news, earnings/dividends, index snapshot
+  - Underlying bars
+  - News
+  - Dividends
+  - Index aggregate bars
 
-Design rule: all Moomoo data is fetched through OpenD methods, not REST calls.
+## Project Structure and Key Functions
 
-## Prerequisites
-
-- Python 3.11+
-- Docker Desktop (or local PostgreSQL 14+ and Redis 7+)
-- Moomoo OpenD desktop app running locally
-- API credentials:
-  - `MASSIVE_API_KEY`
-  - `GEMINI_API_KEY`
-
-## Installation and Setup
-
-### 1. Create and activate virtual environment
-
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```text
+weekly-options-scanner/
+|-- app/
+|   |-- __main__.py
+|   |-- config.py
+|   |-- scheduler.py
+|   |-- clients/
+|   |   |-- massive_client.py
+|   |   |-- moomoo_client.py
+|   |   `-- gemini_client.py
+|   |-- scanner/
+|   |   `-- monitoring_scanner.py
+|   |-- analysis/
+|   |   |-- market_regime.py
+|   |   |-- volatility.py
+|   |   |-- overreaction.py
+|   |   |-- trends.py
+|   |   `-- event_risk.py
+|   |-- risk/
+|   |   `-- portfolio_engine.py
+|   |-- synthesis/
+|   |-- services/
+|   |   |-- orchestrator.py
+|   |   `-- alerts.py
+|   |-- api/
+|   |   |-- main.py
+|   |   `-- routes.py
+|   |-- dashboard/
+|   |   `-- streamlit_app.py
+|   |-- db/
+|   |-- models/
+|   |-- cache/
+|   `-- utils/
+|-- tests/
+|   |-- test_imports.py
+|   `-- live/
+|       |-- conftest.py
+|       |-- test_massive_live.py
+|       |-- test_moomoo_live.py
+|       `-- test_e2e_live.py
+|-- alembic/
+|-- artifacts/
+|   `-- test-output/
+|-- docker-compose.yml
+|-- alembic.ini
+|-- pyproject.toml
+|-- DEPLOYMENT_CHECKLIST.md
+|-- MOOMOO_OPEND.md
+`-- README.md
 ```
 
-macOS/Linux:
+## File and Folder Reference
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
-pip install --upgrade pip setuptools wheel
-pip install -e .
-```
-
-For development tools (pytest, mypy, ruff):
-
-```bash
-pip install -e ".[dev]"
-```
-
-### 3. Create `.env`
-
-This project does not keep `.env.example`. Create `.env` manually in project root:
-
-```env
-APP_ENV=dev
-LOG_LEVEL=INFO
-
-API_HOST=0.0.0.0
-API_PORT=8000
-STREAMLIT_PORT=8501
-
-SCAN_INTERVAL_MINUTES=10
-MAX_MASSIVE_CALLS_PER_MINUTE=5
-
-POSTGRES_DSN=postgresql+psycopg://postgres:postgres@localhost:5432/weekly_options
-REDIS_URL=redis://localhost:6379/0
-
-MASSIVE_API_KEY=your_real_massive_key
-MASSIVE_BASE_URL=https://api.massive.com
-
-MOOMOO_OPEND_HOST=127.0.0.1
-MOOMOO_OPEND_PORT=11111
-
-GEMINI_API_KEY=your_real_gemini_key
-GEMINI_MODEL=gemini-1.5-pro
-
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-ALERT_EMAIL_TO=
-ALERT_EMAIL_FROM=
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASSWORD=
-
-BACKTEST_MODE=false
-```
-
-### 4. Start infrastructure
-
-```bash
-docker compose up -d
-```
-
-Verify:
-
-```bash
-docker ps
-```
-
-### 5. Run migrations
-
-```bash
-alembic upgrade head
-```
-
-### 6. Verify with one scan
-
-```bash
-python -m app --mode scan-once
-```
-
-## Running the App
-
-### API + scheduler
-
-```bash
-python -m app --mode api
-```
-
-### Dashboard
-
-```bash
-streamlit run app/dashboard/streamlit_app.py --server.port 8501
-```
-
-### Other modes
-
-```bash
-python -m app --mode scheduler
-python -m app --mode scan-once
-python -m app --mode backtest --backtest-start 2024-01-01 --backtest-end 2024-12-31 --backtest-symbols SPY,QQQ,NVDA
-```
-
-## API Endpoints
-
-- `GET /api/health`
-- `POST /api/scan/run`
-- `GET /api/recommendations?limit=50`
-
-## Testing
-
-The test suite is now live-oriented under `tests/live` and safely gated.
-
-### Default run (safe)
-
-```bash
-pytest tests/ -v
-```
-
-- Runs non-live checks.
-- Live tests are skipped unless explicitly enabled.
-
-### Run live smoke and live unit tests
-
-```bash
-pytest tests/live -v --run-live -m "live and not e2e"
-```
-
-### Run full live suite including end-to-end
-
-```bash
-pytest tests/live -v --run-live
-```
-
-### Live test prerequisites and skip behavior
-
-Live tests automatically skip when prerequisites are missing:
-
-- `MASSIVE_API_KEY` missing/placeholder
-- Moomoo OpenD socket unavailable at `MOOMOO_OPEND_HOST:MOOMOO_OPEND_PORT`
-- `GEMINI_API_KEY` missing/placeholder (for e2e)
-- PostgreSQL/Redis unreachable (for e2e)
-
-Optional symbol overrides for live tests:
-
-- `LIVE_MASSIVE_SYMBOL` (default `SPY`)
-- `LIVE_MOOMOO_QUOTE_SYMBOL` (default `US.AAPL`)
-- `LIVE_MOOMOO_OPTION_SYMBOL` (default `US.AAPL`)
-
-## Troubleshooting
-
-### Moomoo connection refused
-
-- Ensure OpenD app is running and logged in.
-- Confirm OpenD host/port match `.env`.
-
-### PostgreSQL connection failures
-
-- Confirm Docker containers are running.
-- Validate `POSTGRES_DSN` in `.env`.
-
-### Redis connection failures
-
-- Confirm Redis container is running.
-- Validate `REDIS_URL` in `.env`.
-
-### Massive 429 rate-limit errors
-
-- Increase `SCAN_INTERVAL_MINUTES`.
-- Reduce watchlist size.
-- Keep `MAX_MASSIVE_CALLS_PER_MINUTE` conservative.
-
-### Gemini auth failures
-
-- Verify `GEMINI_API_KEY` value.
-- Restart app after updating `.env`.
-
-## Operational Notes
-
-- Keep OpenD running during scans.
-- Use `audit_logs` and `recommendations` tables for decision traceability.
-- Scheduler interval defaults to 10 minutes; tune based on provider limits.
-
-## Project Layout (Key Paths)
-
-- `app/clients/massive_client.py`
-- `app/clients/moomoo_client.py`
-- `app/scanner/monitoring_scanner.py`
-- `app/services/orchestrator.py`
-- `app/api/main.py`
-- `tests/live/`
+- `app/__main__.py`: CLI entrypoint and app mode selection (api, scheduler, scan-once, backtest).
+- `app/config.py`: central settings model and environment-variable loading.
+- `app/scheduler.py`: APScheduler wiring and scan cadence control.
+- `app/clients/massive_client.py`: Massive REST transport, throttling/retry, and market-data fetch methods.
+- `app/clients/moomoo_client.py`: OpenD quote/trade contexts and wrappers for funds/positions/Greeks/options/snapshot.
+- `app/clients/gemini_client.py`: Gemini integration for narrative/synthesis generation.
+- `app/scanner/monitoring_scanner.py`: option-universe pull + filtering pipeline over provider clients.
+- `app/analysis/`: signal and market-state analytics (regime, volatility, trends, event risk, overreaction).
+- `app/risk/portfolio_engine.py`: portfolio-level risk evaluation and gating logic.
+- `app/synthesis/`: recommendation shaping and final card payload assembly.
+- `app/services/orchestrator.py`: end-to-end scan-cycle orchestrator across scanner, analysis, risk, synthesis, persistence.
+- `app/services/alerts.py`: outbound notification integrations.
+- `app/api/main.py`: FastAPI app bootstrap/lifecycle.
+- `app/api/routes.py`: HTTP endpoints (health, run-scan, recommendations).
+- `app/dashboard/streamlit_app.py`: Streamlit operations and monitoring UI.
+- `app/db/`: database session, migrations integration points, and persistence helpers.
+- `app/models/`: ORM/domain models (scan runs, recommendations, audit data, etc.).
+- `app/cache/`: Redis cache helper logic and key access paths.
+- `app/utils/`: reusable utility functions shared across modules.
+- `tests/test_imports.py`: import smoke test for base module integrity.
+- `tests/live/conftest.py`: `--run-live` gating, provider readiness checks, and live-symbol fixtures.
+- `tests/live/test_moomoo_live.py`: live OpenD validation for quotes/options/funds/positions/Greeks.
+- `tests/live/test_massive_live.py`: live Massive validation for bars/news/calendar/dividends/index bars.
+- `tests/live/test_e2e_live.py`: full orchestrator live integration test.
 
 ## Status
 
-Ready for local deployment and live-provider validation with gated test execution.
+Repository is configured for live-provider validation and local deployment.

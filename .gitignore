@@ -75,3 +75,7 @@ logs/
 
 # Test artifacts and local outputs
 artifacts/
+
+# Local ops docs (workspace-specific)
+DEPLOYMENT_CHECKLIST.md
+MOOMOO_OPEND.md
