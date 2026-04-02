@@ -22,12 +22,12 @@ class Settings(BaseSettings):
 
     massive_api_key: str = Field(alias="MASSIVE_API_KEY")
     massive_base_url: str = Field(alias="MASSIVE_BASE_URL")
+    alpha_vantage_api_key: str | None = Field(default=None, alias="ALPHA_VANTAGE_API_KEY")
 
     moomoo_opend_host: str = Field(default="127.0.0.1", alias="MOOMOO_OPEND_HOST")
     moomoo_opend_port: int = Field(default=11111, alias="MOOMOO_OPEND_PORT")
 
     gemini_api_key: str = Field(alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-1.5-pro", alias="GEMINI_MODEL")
 
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, alias="TELEGRAM_CHAT_ID")

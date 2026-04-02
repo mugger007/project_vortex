@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+import threading
+import time
+from collections import deque
 from typing import Any
 
 from structlog import get_logger
@@ -24,12 +28,89 @@ class MoomooClient:
     All methods return moomoo-api SDK objects (typically pandas DataFrames or tuples).
     """
 
+    SNAPSHOT_RATE_LIMIT = 60
+    SNAPSHOT_RATE_WINDOW_SECONDS = 30
+    OPTION_EXPIRATION_RATE_LIMIT = 60
+    OPTION_EXPIRATION_RATE_WINDOW_SECONDS = 30
+    OPTION_CHAIN_RATE_LIMIT = 10
+    OPTION_CHAIN_RATE_WINDOW_SECONDS = 30
+
     def __init__(self) -> None:
         settings = get_settings()
         self.host = settings.moomoo_opend_host
         self.port = settings.moomoo_opend_port
         self._quote_ctx = None
         self._trade_ctx = None
+        self._snapshot_call_times: deque[float] = deque()
+        self._snapshot_rate_lock = threading.Lock()
+        self._option_expiration_call_times: deque[float] = deque()
+        self._option_expiration_rate_lock = threading.Lock()
+        self._option_chain_call_times: deque[float] = deque()
+        self._option_chain_rate_lock = threading.Lock()
+
+    def _respect_rate_limit(
+        self,
+        call_times: deque[float],
+        rate_lock: threading.Lock,
+        rate_limit: int,
+        window_seconds: int,
+        log_event: str,
+        request_count: int = 1,
+    ) -> None:
+        while True:
+            with rate_lock:
+                now = time.monotonic()
+                window_start = now - window_seconds
+
+                while call_times and call_times[0] <= window_start:
+                    call_times.popleft()
+
+                if len(call_times) + request_count <= rate_limit:
+                    for _ in range(request_count):
+                        call_times.append(now)
+                    return
+
+                wait_seconds = call_times[0] + window_seconds - now
+
+            if wait_seconds > 0:
+                logger.info(
+                    log_event,
+                    wait_seconds=round(wait_seconds, 3),
+                    queued_calls=len(call_times),
+                    limit=rate_limit,
+                    window_seconds=window_seconds,
+                )
+                time.sleep(wait_seconds)
+
+    def _respect_snapshot_rate_limit(self, request_count: int = 1) -> None:
+        self._respect_rate_limit(
+            call_times=self._snapshot_call_times,
+            rate_lock=self._snapshot_rate_lock,
+            rate_limit=self.SNAPSHOT_RATE_LIMIT,
+            window_seconds=self.SNAPSHOT_RATE_WINDOW_SECONDS,
+            log_event="moomoo_snapshot_rate_limited",
+            request_count=request_count,
+        )
+
+    def _respect_option_expiration_rate_limit(self, request_count: int = 1) -> None:
+        self._respect_rate_limit(
+            call_times=self._option_expiration_call_times,
+            rate_lock=self._option_expiration_rate_lock,
+            rate_limit=self.OPTION_EXPIRATION_RATE_LIMIT,
+            window_seconds=self.OPTION_EXPIRATION_RATE_WINDOW_SECONDS,
+            log_event="moomoo_option_expiration_rate_limited",
+            request_count=request_count,
+        )
+
+    def _respect_option_chain_rate_limit(self, request_count: int = 1) -> None:
+        self._respect_rate_limit(
+            call_times=self._option_chain_call_times,
+            rate_lock=self._option_chain_rate_lock,
+            rate_limit=self.OPTION_CHAIN_RATE_LIMIT,
+            window_seconds=self.OPTION_CHAIN_RATE_WINDOW_SECONDS,
+            log_event="moomoo_option_chain_rate_limited",
+            request_count=request_count,
+        )
 
     def _ensure_quote_ctx(self):
         if self._quote_ctx is None:
@@ -266,6 +347,7 @@ class MoomooClient:
             List of expiration dates in format 'YYYY-MM-DD'.
             API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-option-expiration-date.html
         """
+        self._respect_option_expiration_rate_limit(request_count=1)
         self._ensure_quote_ctx()
         try:
             ret, data = self._quote_ctx.get_option_expiration_date(code=symbol)
@@ -290,6 +372,7 @@ class MoomooClient:
             List of option contracts with strike, expiry, Greeks, OI, volume, etc.
             API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-option-chain.html
         """
+        self._respect_option_chain_rate_limit(request_count=1)
         self._ensure_quote_ctx()
         try:
             ret, data = self._quote_ctx.get_option_chain(code=symbol, start=start, end=end)
@@ -303,31 +386,60 @@ class MoomooClient:
             return []
 
     def get_snapshot(self, symbol: str) -> dict[str, Any]:
-        """Get real-time quote snapshot for a symbol (including underlier or USD.HKD, etc.).
+        """Get real-time quote snapshot for an option symbol via OpenD daemon.
+
+        Only accepts option-related symbols in the Moomoo format.
 
         Args:
-            symbol: ticker code e.g. 'HK.00700', 'US.AAPL', 'USD.HKD'
+            symbol: option ticker code e.g. 'US.SCO260417P8000', 'US.AAPL260419C00150000'.
+                   Format: {market}.{underlying}{YYMMDD}{C|P}{strike}
+                   - market: US, HK, etc (2 chars)
+                   - underlying: symbol name (1-6 chars)
+                   - YYMMDD: expiration date
+                   - C|P: Call or Put option type
+                   - strike: strike price (digits, may include decimals)
 
         Returns:
-            snapshot dict with last_price, bid, ask, volume, etc.
+            snapshot dict with last_price, bid, ask, volume, etc., or empty dict if validation fails.
+            
+        Raises:
+            ValueError: if symbol does not match the expected option format.
+            
+        API Reference: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-market-snapshot.html
         """
+        # Validate option symbol format: {market}.{underlying}{YYMMDD}{C|P}{strike}
+        # Example: US.SCO260417P8000, US.AAPL260419C00150000
+        option_symbol_pattern = re.compile(r"^[A-Z]{2}\.[A-Z0-9]{1,6}\d{6}[CP]\d+(\.\d+)?$")
+        
+        if not option_symbol_pattern.match(symbol):
+            error_msg = f"Invalid option symbol format: {symbol}. Expected format: {{market}}.{{underlying}}{{YYMMDD}}{{C|P}}{{strike}} (e.g., US.SCO260417P8000)"
+            logger.error("moomoo_invalid_option_symbol", symbol=symbol, error=error_msg)
+            raise ValueError(error_msg)
+
+        self._respect_snapshot_rate_limit(request_count=1)
+
         self._ensure_quote_ctx()
         try:
             ret, data = self._quote_ctx.get_market_snapshot([symbol])
             if ret == 0 and data is not None and len(data) > 0:
                 row = data.iloc[0]
+                option_open_interest = int(row.get("option_open_interest", 0) or 0)
                 return {
                     "code": str(row.get("code", "")),
                     "last_price": float(row.get("last_price", 0.0) or 0.0),
+                    "prev_close_price": float(row.get("prev_close_price", 0.0) or 0.0),
                     "bid": float(row.get("bid_price", 0.0) or 0.0),
                     "ask": float(row.get("ask_price", 0.0) or 0.0),
                     "volume": int(row.get("volume", 0) or 0),
+                    "option_open_interest": option_open_interest,
                     "turnover": float(row.get("turnover", 0.0) or 0.0),
                     "raw": row.to_dict(),
                 }
             else:
                 logger.error("moomoo_snapshot_error", ret=ret, symbol=symbol)
                 return {}
+        except ValueError:
+            raise
         except Exception as e:
             logger.exception("moomoo_get_snapshot_error", error=str(e))
             return {}

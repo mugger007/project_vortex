@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 
-def is_weekly_friday_expiry(expiry: str) -> bool:
-    # Expiry format expected YYYY-MM-DD. US equity weekly options expire on Friday.
-    if len(expiry) != 10:
+
+def _is_expiry_in_current_week(expiry: str) -> bool:
+    try:
+        expiry_date = datetime.fromisoformat(expiry).date()
+    except ValueError:
         return False
-    year, month, day = map(int, expiry.split("-"))
-    import datetime as dt
 
-    return dt.date(year, month, day).weekday() == 4
+    current_date = datetime.now(UTC).date()
+    expiry_year, expiry_week, _ = expiry_date.isocalendar()
+    current_year, current_week, _ = current_date.isocalendar()
+    return (expiry_year, expiry_week) == (current_year, current_week)
 
 
 def liquidity_filter(oi: int, volume: int, bid: float, ask: float, premium: float) -> tuple[bool, str]:
-    if oi <= 750:
-        return False, "Rejected: OI <= 750"
-    if volume <= 100:
-        return False, "Rejected: volume <= 100/day"
-    spread = max(ask - bid, 0.0)
+    if oi <= 500:
+        return False, "Rejected: OI <= 500"
+    # spread = max(ask - bid, 0.0)
     if premium <= 0:
         return False, "Rejected: invalid premium"
-    if spread / premium >= 0.10:
-        return False, "Rejected: bid-ask spread >= 10% premium"
+    # if spread / premium >= 0.01:
+        # return False, "Rejected: bid-ask spread >= 1% premium"
     return True, "Passed liquidity"

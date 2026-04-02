@@ -43,6 +43,8 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+Thumbs.db
+Desktop.ini
 
 # Testing and coverage
 .pytest_cache/
@@ -50,11 +52,15 @@ venv.bak/
 .coverage.*
 htmlcov/
 .tox/
+.nox/
 .mypy_cache/
+.pyre/
+.pytype/
 .dmypy.json
 dmypy.json
 .ruff_cache/
 .hypothesis/
+coverage.xml
 
 # Notebook and local runtime caches
 .ipynb_checkpoints/
@@ -72,6 +78,9 @@ logs/
 
 # Local development
 .streamlit/
+
+# Local scratch scripts
+app/clients/test.py
 
 # Test artifacts and local outputs
 artifacts/

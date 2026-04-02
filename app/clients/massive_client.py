@@ -64,14 +64,22 @@ class MassiveClient:
         data = self._get("/v2/reference/news", {"ticker": symbol, "limit": limit})
         return data.get("results", [])
 
-    # TO-DO: fix this endpoint; does not exist
-    def get_earnings_calendar(self, symbol: str) -> list[dict[str, Any]]:
-        data = self._get("/vX/reference/earnings", {"ticker": symbol})
-        return data.get("results", [])
-
     def get_dividend_calendar(self, symbol: str) -> list[dict[str, Any]]:
         data = self._get("/v3/reference/dividends", {"ticker": symbol})
         return data.get("results", [])
+
+    def get_market_holidays(self) -> list[dict[str, Any]]:
+        """Get upcoming US market holidays and closures.
+
+        Massive exposes upcoming market status data for forward-looking holiday planning.
+        The payload shape is flexible across API versions, so we accept several common keys.
+        """
+        data = self._get("/v1/marketstatus/upcoming")
+        for key in ("response", "results", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+        return []
 
     def get_index_bars(self, symbol: str, days: int = 5) -> dict[str, Any]:
         """Get recent OHLC bars for an index using the custom bars endpoint.

@@ -6,10 +6,11 @@ from datetime import UTC, datetime
 from structlog import get_logger
 
 from app.cache.redis_client import RedisCache
+from app.clients.massive_client import MassiveClient
 from app.clients.moomoo_client import MoomooClient
 from app.db.repositories import ScanRepository
 from app.models.schemas import FilteredCandidate, OptionSnapshot
-from app.scanner.filters import is_weekly_friday_expiry, liquidity_filter
+from app.scanner.filters import _is_expiry_in_current_week, liquidity_filter
 
 logger = get_logger(__name__)
 
@@ -22,8 +23,15 @@ class ScannerResult:
 
 
 class MonitoringScanner:
-    def __init__(self, moomoo_client: MoomooClient, cache: RedisCache, repo: ScanRepository) -> None:
+    def __init__(
+        self,
+        moomoo_client: MoomooClient,
+        massive_client: MassiveClient,
+        cache: RedisCache,
+        repo: ScanRepository,
+    ) -> None:
         self.moomoo_client = moomoo_client
+        self.massive_client = massive_client
         self.cache = cache
         self.repo = repo
 
@@ -52,53 +60,91 @@ class MonitoringScanner:
         candidates: list[FilteredCandidate] = []
         
         for expiry in expiry_dates:
-            if not is_weekly_friday_expiry(expiry):
+            if not _is_expiry_in_current_week(expiry):
                 continue
-            
-            # Get option chain for this expiration
+
             chain = self.moomoo_client.get_option_chain(symbol, start=expiry, end=expiry)
-            
+            logger.info(
+                "option_chain_loaded",
+                symbol=symbol,
+                expiry=expiry,
+                chain_count=len(chain),
+            )
+
             for row in chain:
-                # Extract fields from Moomoo option chain DataFrame (converted to dict)
-                option_symbol = row.get("code", "")
-                
+                option_symbol = str(row.get("code", "") or "")
                 if not option_symbol:
                     continue
 
-                # Extract premium (use bid-ask midpoint or last price)
-                bid = float(row.get("bid", 0.0) or 0.0)
-                ask = float(row.get("ask", 0.0) or 0.0)
-                last_price = float(row.get("last_price", 0.0) or 0.0)
-                
+                try:
+                    snapshot = self.moomoo_client.get_snapshot(option_symbol)
+                except ValueError:
+                    logger.warning("invalid_option_symbol_skipped", symbol=symbol, option_symbol=option_symbol)
+                    continue
+
+                if not snapshot:
+                    logger.warning("option_snapshot_missing", symbol=symbol, option_symbol=option_symbol)
+                    continue
+
+                bid = float(snapshot.get("bid", 0.0) or row.get("bid", 0.0) or 0.0)
+                ask = float(snapshot.get("ask", 0.0) or row.get("ask", 0.0) or 0.0)
+                last_price = float(snapshot.get("last_price", 0.0) or row.get("last_price", 0.0) or 0.0)
+                prev_close_price = float(
+                    snapshot.get("prev_close_price", 0.0) or row.get("prev_close_price", 0.0) or 0.0
+                )
+
                 if bid > 0 and ask > 0:
                     premium = (bid + ask) / 2
                 else:
                     premium = last_price
-                
-                oi = int(row.get("open_interest", 0) or 0)
-                volume = int(row.get("volume", 0) or 0)
 
-                cache_key = f"snapshot:{option_symbol}"
-                prev = self.cache.get_float(cache_key)
-                jump_pct = ((premium - prev) / prev) * 100 if prev and prev > 0 else 0.0
+                oi = int(snapshot.get("option_open_interest", 0) or 0)
+                volume = int(snapshot.get("volume", 0) or row.get("volume", 0) or 0)
 
-                self.cache.set_float(cache_key, premium, ttl_seconds=86_400)
+                jump_pct = ((premium - prev_close_price) / prev_close_price) * 100 if prev_close_price > 0 else 0.0
+                spread = max(ask - bid, 0.0)
+                spread_ratio = (spread / premium) if premium > 0 else 0.0
+
+                logger.info(
+                    "option_filter_metrics",
+                    symbol=symbol,
+                    expiry=expiry,
+                    option_symbol=option_symbol,
+                    premium=premium,
+                    prev_close_price=prev_close_price,
+                    jump_pct=jump_pct,
+                    oi=oi,
+                    volume=volume,
+                    bid=bid,
+                    ask=ask,
+                    spread=spread,
+                    spread_ratio=spread_ratio,
+                )
+
                 self.repo.save_snapshot(
                     {
                         "symbol": symbol,
                         "option_symbol": option_symbol,
                         "expiry": expiry,
-                        "snapshot_ts": self._to_datetime(row.get("last_updated")),
+                        "snapshot_ts": self._to_datetime(snapshot.get("update_time", row.get("last_updated"))),
                         "premium": premium,
                         "oi": oi,
                         "volume": volume,
                         "bid": bid,
                         "ask": ask,
-                        "raw_json": row,
+                        "raw_json": {"chain": row, "snapshot": snapshot},
                     }
                 )
 
-                if jump_pct <= 500:
+                if jump_pct <= 100:
+                    logger.info(
+                        "option_rejected_jump_threshold",
+                        symbol=symbol,
+                        expiry=expiry,
+                        option_symbol=option_symbol,
+                        jump_pct=jump_pct,
+                        threshold=100,
+                    )
                     continue
 
                 passed, reason = liquidity_filter(oi=oi, volume=volume, bid=bid, ask=ask, premium=premium)
@@ -108,6 +154,20 @@ class MonitoringScanner:
                     payload_json={"symbol": symbol, "option_symbol": option_symbol, "jump_pct": jump_pct},
                 )
                 if not passed:
+                    logger.info(
+                        "option_rejected_liquidity",
+                        symbol=symbol,
+                        expiry=expiry,
+                        option_symbol=option_symbol,
+                        reason=reason,
+                        jump_pct=jump_pct,
+                        oi=oi,
+                        volume=volume,
+                        bid=bid,
+                        ask=ask,
+                        premium=premium,
+                        spread_ratio=spread_ratio,
+                    )
                     continue
 
                 candidates.append(
@@ -125,8 +185,8 @@ class MonitoringScanner:
                             volume=volume,
                             bid=bid,
                             ask=ask,
-                            ts=self._to_datetime(row.get("last_updated")),
-                            extra=row,
+                            ts=self._to_datetime(snapshot.get("update_time", row.get("last_updated"))),
+                            extra={"chain": row, "snapshot": snapshot},
                         ),
                     )
                 )

@@ -9,6 +9,7 @@ import redis
 from sqlalchemy import create_engine, text
 
 from app.config import get_settings
+from app.logging import configure_logging
 
 
 def _is_placeholder(value: str | None) -> bool:
@@ -20,6 +21,7 @@ def _is_placeholder(value: str | None) -> bool:
         "changeme",
         "your_api_key_here",
         "your_massive_api_key_here",
+        "your_alpha_vantage_api_key_here",
         "your_gemini_api_key_here",
         "none",
         "null",
@@ -68,6 +70,11 @@ def require_run_live(request: pytest.FixtureRequest) -> None:
         pytest.skip("live tests are disabled; rerun with --run-live")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def configure_live_logging() -> None:
+    configure_logging("INFO")
+
+
 @pytest.fixture(scope="session")
 def settings():
     return get_settings()
@@ -77,6 +84,7 @@ def settings():
 def live_symbols() -> dict[str, str]:
     return {
         "massive_symbol": os.getenv("LIVE_MASSIVE_SYMBOL", "SPY"),
+        "alpha_vantage_symbol": os.getenv("LIVE_ALPHA_VANTAGE_SYMBOL", "PLTR"),
         "moomoo_quote_symbol": os.getenv("LIVE_MOOMOO_QUOTE_SYMBOL", "HK.00700"),
         "moomoo_option_symbol": os.getenv("LIVE_MOOMOO_OPTION_SYMBOL", "HK.00700"),
     }
@@ -86,6 +94,12 @@ def live_symbols() -> dict[str, str]:
 def require_massive(settings) -> None:
     if _is_placeholder(settings.massive_api_key):
         pytest.skip("MASSIVE_API_KEY is missing or placeholder")
+
+
+@pytest.fixture(scope="session")
+def require_alpha_vantage(settings) -> None:
+    if _is_placeholder(settings.alpha_vantage_api_key):
+        pytest.skip("ALPHA_VANTAGE_API_KEY is missing or placeholder")
 
 
 @pytest.fixture(scope="session")

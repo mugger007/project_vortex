@@ -72,15 +72,6 @@ class TestMassiveLive:
         if news:
             assert "title" in news[0]
 
-    def test_get_earnings_calendar_live(self, require_massive, live_symbols) -> None:
-        client = MassiveClient()
-        symbol = live_symbols["massive_symbol"]
-
-        # Endpoint can be sparse depending on ticker/date; validate response shape.
-        events = client.get_earnings_calendar(symbol=symbol)
-        _save_output("test_get_earnings_calendar_live", {"symbol": symbol, "events": events})
-        assert isinstance(events, list)
-
     def test_get_dividend_calendar_live(self, require_massive, live_symbols) -> None:
         client = MassiveClient()
         symbol = live_symbols["massive_symbol"]

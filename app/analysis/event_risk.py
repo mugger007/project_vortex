@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+from app.clients.alpha_vantage_client import AlphaVantageClient
 from app.clients.massive_client import MassiveClient
 
 
 class EventRiskAnalyzer:
     def __init__(self, massive: MassiveClient) -> None:
         self.massive = massive
+        self.alpha_vantage = AlphaVantageClient()
 
     def _within_5_days(self, date_str: str) -> bool:
         try:
@@ -21,7 +23,7 @@ class EventRiskAnalyzer:
         return today <= d <= today + timedelta(days=5)
 
     def analyze(self, symbol: str) -> tuple[bool, str]:
-        earnings = self.massive.get_earnings_calendar(symbol)
+        earnings = self.alpha_vantage.get_earnings_calendar(symbol)
         dividends = self.massive.get_dividend_calendar(symbol)
         reasons: list[str] = []
 

@@ -44,6 +44,8 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+log_cli = true
+log_cli_level = "INFO"
 markers = [
   "live: marks tests that hit live external providers",
   "e2e: marks end-to-end live pipeline tests"
