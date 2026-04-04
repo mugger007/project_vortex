@@ -9,12 +9,20 @@ The system scans for large option-premium jumps, applies hard filters/risk gates
 - Moomoo OpenD (local SDK):
   - Option expiration dates and option chains
   - Account funds, positions, and position Greeks
-  - Quote snapshots
+  - Option quote snapshots (including OI and pricing fields)
 - Massive REST API:
   - Underlying bars
   - News
   - Dividends
-  - Index aggregate bars
+  - Ticker reference/overview lookups
+  - Historical window and rate-limit constrained transport for analysis inputs
+- Alpha Vantage REST API:
+  - Earnings calendar lookups used in event-risk analysis
+- yfinance:
+  - Index intraday snapshots used by market-regime analytics (`^VIX`, `^GSPC`)
+  - Index previous-close change calculations used in market-regime summaries
+- Gemini API:
+  - Structured JSON generation for overreaction and recommendation synthesis
 
 ## Project Structure and Key Functions
 
@@ -25,6 +33,7 @@ weekly-options-scanner/
 |   |-- config.py
 |   |-- scheduler.py
 |   |-- clients/
+|   |   |-- alpha_vantage_client.py
 |   |   |-- massive_client.py
 |   |   |-- moomoo_client.py
 |   |   `-- gemini_client.py
@@ -52,11 +61,24 @@ weekly-options-scanner/
 |   |-- cache/
 |   `-- utils/
 |-- tests/
+|   |-- conftest.py
 |   |-- test_imports.py
+|   |-- test_orchestrator.py
+|   |-- test_market_regime_unit.py
+|   |-- test_recommendation_engine_unit.py
+|   |-- test_monitoring_scanner_unit.py
 |   `-- live/
+|       |-- test_alpha_vantage_live.py
+|       |-- test_event_risk_live.py
+|       |-- test_market_regime_live.py
+|       |-- test_monitoring_scanner_live.py
+|       |-- test_recommendation_engine_live.py
 |       |-- conftest.py
 |       |-- test_massive_live.py
 |       |-- test_moomoo_live.py
+|       |-- test_overreaction_live.py
+|       |-- test_trends_live.py
+|       |-- test_volatility_live.py
 |       `-- test_e2e_live.py
 |-- alembic/
 |-- artifacts/
@@ -76,6 +98,7 @@ weekly-options-scanner/
 - `app/scheduler.py`: APScheduler wiring and scan cadence control.
 - `app/clients/massive_client.py`: Massive REST transport, throttling/retry, and market-data fetch methods.
 - `app/clients/moomoo_client.py`: OpenD quote/trade contexts and wrappers for funds/positions/Greeks/options/snapshot.
+- `app/clients/alpha_vantage_client.py`: Alpha Vantage earnings-calendar adapter.
 - `app/clients/gemini_client.py`: Gemini integration for narrative/synthesis generation.
 - `app/scanner/monitoring_scanner.py`: option-universe pull + filtering pipeline over provider clients.
 - `app/analysis/`: signal and market-state analytics (regime, volatility, trends, event risk, overreaction).
@@ -91,11 +114,30 @@ weekly-options-scanner/
 - `app/cache/`: Redis cache helper logic and key access paths.
 - `app/utils/`: reusable utility functions shared across modules.
 - `tests/test_imports.py`: import smoke test for base module integrity.
+- `tests/conftest.py`: deterministic shared fixtures for unit tests.
+- `tests/test_orchestrator.py`: isolated orchestration unit test using monkeypatched dependencies.
+- `tests/test_market_regime_unit.py`: deterministic market regime scoring tests using mocked yfinance metrics.
+- `tests/test_recommendation_engine_unit.py`: recommendation/scorecard unit tests including hard-block behavior.
+- `tests/test_monitoring_scanner_unit.py`: scanner unit tests for jump-threshold and liquidity pass/reject paths.
 - `tests/live/conftest.py`: `--run-live` gating, provider readiness checks, and live-symbol fixtures.
 - `tests/live/test_moomoo_live.py`: live OpenD validation for quotes/options/funds/positions/Greeks.
 - `tests/live/test_massive_live.py`: live Massive validation for bars/news/calendar/dividends/index bars.
+- `tests/live/test_alpha_vantage_live.py`: live Alpha Vantage earnings calendar validation.
+- `tests/live/test_monitoring_scanner_live.py`: live scanner smoke validation with real Moomoo option-chain/snapshot flow.
+- `tests/live/test_overreaction_live.py`: live overreaction analyzer validation using Massive news + Gemini output.
+- `tests/live/test_trends_live.py`: live trend analyzer validation.
+- `tests/live/test_volatility_live.py`: live volatility analyzer validation.
+- `tests/live/test_event_risk_live.py`: live event-risk analyzer validation.
+- `tests/live/test_market_regime_live.py`: live yfinance-driven market regime validation.
+- `tests/live/test_recommendation_engine_live.py`: live recommendation synthesis validation using direct live analyzer outputs with deterministic fallback.
 - `tests/live/test_e2e_live.py`: full orchestrator live integration test.
+
+## Testing Notes
+
+- Unit tests are deterministic and isolated from external infra/providers.
+- Live tests are gated behind `--run-live` and should use `live_symbols` from `tests/live/conftest.py` rather than hardcoded tickers.
+- Live recommendation test is intentionally decoupled from cross-test artifact dependencies.
 
 ## Status
 
-Repository is configured for live-provider validation and local deployment.
+Repository is configured for live-provider validation, local deployment, and persisted JSON artifacts under `artifacts/test-output/` for live test inspection.

@@ -1,3 +1,5 @@
+﻿"""Redis cache helpers for storing and retrieving scan data."""
+
 import json
 from typing import Any
 
@@ -23,3 +25,4 @@ class RedisCache:
 
     def set_float(self, key: str, value: float, ttl_seconds: int = 3600) -> None:
         self.client.set(key, str(value), ex=ttl_seconds)
+

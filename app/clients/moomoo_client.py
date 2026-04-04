@@ -1,3 +1,5 @@
+﻿"""Moomoo OpenD client for quotes, options, and account data."""
+
 from __future__ import annotations
 
 import re
@@ -454,4 +456,5 @@ class MoomooClient:
             logger.info("moomoo_contexts_closed")
         except Exception as e:
             logger.exception("moomoo_close_error", error=str(e))
+
 

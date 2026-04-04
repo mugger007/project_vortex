@@ -1,3 +1,5 @@
+﻿"""Database repository layer for scan runs, snapshots, and recommendations."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -74,3 +76,4 @@ class ScanRepository:
     def list_recommendations(self, limit: int = 50) -> list[Recommendation]:
         stmt = select(Recommendation).order_by(desc(Recommendation.created_at)).limit(limit)
         return list(self.db.execute(stmt).scalars().all())
+

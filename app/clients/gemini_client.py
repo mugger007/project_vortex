@@ -1,3 +1,5 @@
+﻿"""Gemini API client for JSON synthesis responses."""
+
 from __future__ import annotations
 
 import json
@@ -23,3 +25,4 @@ class GeminiClient:
             text = text.strip("`")
             text = text.replace("json", "", 1).strip()
         return json.loads(text)
+

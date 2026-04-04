@@ -1,3 +1,5 @@
+﻿"""News-driven overreaction likelihood analysis."""
+
 from __future__ import annotations
 
 from app.clients.gemini_client import GeminiClient
@@ -20,3 +22,4 @@ class OverreactionAnalyzer:
         )
         result = self.gemini.generate_json(prompt)
         return float(result.get("overreaction_likelihood", 0.0)), str(result.get("explanation", ""))
+

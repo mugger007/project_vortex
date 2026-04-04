@@ -41,7 +41,7 @@ class TestMoomooLive:
 
     def test_moomoo_smoke_connectivity(self, require_moomoo, live_symbols) -> None:
         client = MoomooClient()
-        symbol = live_symbols["moomoo_quote_symbol"]
+        symbol = live_symbols["moomoo_option_symbol"]
 
         snap = client.get_snapshot(symbol)
         _save_output("test_moomoo_smoke_connectivity", {"symbol": symbol, "snapshot": snap})
@@ -52,7 +52,7 @@ class TestMoomooLive:
 
     def test_get_snapshot_live(self, require_moomoo, live_symbols) -> None:
         client = MoomooClient()
-        symbol = live_symbols["moomoo_quote_symbol"]
+        symbol = live_symbols["moomoo_option_symbol"]
 
         snap = client.get_snapshot(symbol)
         _save_output("test_get_snapshot_live", {"symbol": symbol, "snapshot": snap})

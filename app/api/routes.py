@@ -1,3 +1,5 @@
+﻿"""HTTP routes for health checks and scan orchestration endpoints."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -44,3 +46,4 @@ def list_recommendations(limit: int = 50) -> dict:
             for r in recs
         ],
     }
+

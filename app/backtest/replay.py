@@ -1,3 +1,5 @@
+﻿"""Backtest replay routines for historical strategy evaluation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,3 +42,4 @@ class HistoricalReplayRunner:
             "trades_simulated": 0,
             "message": "Backtesting engine scaffold ready; integrate historical loaders next.",
         }
+

@@ -1,3 +1,5 @@
+﻿"""Alert delivery service for high-confidence recommendations."""
+
 from __future__ import annotations
 
 import smtplib
@@ -50,3 +52,4 @@ class AlertService:
         )
         self._send_telegram(message)
         self._send_email(subject=f"Weekly Option Setup: {card.symbol}", message=message)
+

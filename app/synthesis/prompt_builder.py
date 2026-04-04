@@ -1,3 +1,5 @@
+﻿"""Prompt construction helpers for recommendation synthesis."""
+
 from __future__ import annotations
 
 from app.models.schemas import AnalysisBundle, FilteredCandidate, RiskDecision
@@ -6,9 +8,25 @@ from app.models.schemas import AnalysisBundle, FilteredCandidate, RiskDecision
 def build_synthesis_prompt(
     candidate: FilteredCandidate,
     analysis: AnalysisBundle,
-    risk: RiskDecision,
+    risk: RiskDecision | None,
     scorecard: int,
 ) -> str:
+    if risk is None:
+        risk_lines = """
+Portfolio risk:
+- Disabled for this run
+""".strip()
+    else:
+        risk_lines = f"""
+Portfolio risk:
+- Approved: {risk.approved}
+- Risk reason: {risk.reason}
+- Risk score (0-100): {risk.risk_score:.2f}
+- Expected max drawdown: {risk.expected_max_drawdown:.4f}
+- Max correlation: {risk.correlation_max:.4f}
+- Proposed size % capital: {risk.proposed_size_pct:.2f}
+""".strip()
+
     return f"""
 You are an institutional US weekly-options premium-selling strategist.
 Task: Decide if this contract should be sold for theta decay.
@@ -36,13 +54,7 @@ Analysis:
 - Market regime score (0-100): {analysis.regime_score:.2f}
 - Market regime summary: {analysis.regime_summary}
 
-Portfolio risk:
-- Approved: {risk.approved}
-- Risk reason: {risk.reason}
-- Risk score (0-100): {risk.risk_score:.2f}
-- Expected max drawdown: {risk.expected_max_drawdown:.4f}
-- Max correlation: {risk.correlation_max:.4f}
-- Proposed size % capital: {risk.proposed_size_pct:.2f}
+{risk_lines}
 
 Rule-based scorecard (0-100): {scorecard}
 
@@ -58,7 +70,7 @@ Output requirements:
   "estimated_theta": number or null,
   "estimated_vega": number or null
 }}
-3) If event risk flag is true or risk approved is false, recommendation must be Avoid.
+3) If event risk flag is true, recommendation must be Avoid.
 4) Confidence calibration:
 - Strong Sell should generally be >=75
 - Sell should generally be 60-80
@@ -66,3 +78,4 @@ Output requirements:
 - Avoid 0-55
 5) Use conservative assumptions; never suggest auto-trading.
 """.strip()
+

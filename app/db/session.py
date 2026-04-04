@@ -1,3 +1,5 @@
+﻿"""Database engine and session context manager utilities."""
+
 from contextlib import contextmanager
 from collections.abc import Generator
 
@@ -9,7 +11,7 @@ from app.config import get_settings
 settings = get_settings()
 
 engine = create_engine(settings.postgres_dsn, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
 
 @contextmanager
@@ -23,3 +25,4 @@ def get_db_session() -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+

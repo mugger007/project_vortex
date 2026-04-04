@@ -1,3 +1,5 @@
+﻿"""Portfolio risk checks for candidate trade approval."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -112,3 +114,4 @@ class PortfolioRiskEngine:
             correlation_max=corr_max,
             proposed_size_pct=proposed_size,
         )
+

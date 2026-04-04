@@ -1,3 +1,5 @@
+﻿"""CLI entrypoint for running API, scheduler, and one-shot scan modes."""
+
 from __future__ import annotations
 
 import argparse
@@ -63,3 +65,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

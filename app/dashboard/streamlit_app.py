@@ -1,3 +1,5 @@
+﻿"""Streamlit dashboard entrypoint for monitoring recommendations."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -36,3 +38,4 @@ if resp.ok:
         st.info("No recommendations yet.")
 else:
     st.error(f"Failed to load recommendations: {resp.text}")
+

@@ -80,15 +80,16 @@ class TestMassiveLive:
 
         assert isinstance(dividends, list)
 
-    def test_get_index_bars_live(self, require_massive, live_symbols) -> None:
+    def test_get_index_latest_bar_live(self, require_massive, live_symbols) -> None:
         client = MassiveClient()
-        symbol = live_symbols["massive_symbol"]
-        bar = client.get_index_bars(symbol=symbol)
-        _save_output("test_get_index_bars_live", {"symbol": symbol, "bar": bar})
+        symbol = "I:VIX"
+        bars = client.get_underlying_bars(symbol=symbol, timespan="day", limit=1)
+        bar = bars[0] if bars else {}
+        _save_output("test_get_index_latest_bar_live", {"symbol": symbol, "bar": bar})
 
         assert isinstance(bar, dict)
         if bar:
-            # Verify OHLC bar structure from custom bars endpoint
+            # Verify OHLC bar structure from aggregates endpoint.
             required_fields = {"c", "o", "h", "l", "t"}
             assert required_fields.issubset(set(bar.keys()))
             assert isinstance(bar["c"], (int, float))

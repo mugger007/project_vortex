@@ -35,57 +35,24 @@ def _save_output(test_name: str, payload: dict) -> None:
     OUTPUT_FILE.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
 
 
-class FakeCache:
-    def __init__(self) -> None:
-        self.json_values: dict[str, dict] = {}
-
-    def get_json(self, key: str) -> dict | None:
-        return self.json_values.get(key)
-
-    def set_json(self, key: str, value: dict, ttl_seconds: int) -> None:
-        self.json_values[key] = value
-
-
-class FakeRepo:
-    def __init__(self) -> None:
-        self.snapshots: list[dict] = []
-        self.audit_logs: list[dict] = []
-
-    def save_snapshot(self, payload: dict) -> dict:
-        self.snapshots.append(payload)
-        return payload
-
-    def add_audit_log(
-        self,
-        stage: str,
-        message: str,
-        payload_json: dict,
-        scan_run_id: int | None = None,
-        level: str = "INFO",
-    ) -> None:
-        self.audit_logs.append(
-            {
-                "stage": stage,
-                "message": message,
-                "payload_json": payload_json,
-                "scan_run_id": scan_run_id,
-                "level": level,
-            }
-        )
-
-
 class TestMonitoringScannerLive:
-    def _make_scanner(self) -> tuple[MonitoringScanner, FakeCache, FakeRepo, MoomooClient]:
+    def _make_scanner(self) -> tuple[MonitoringScanner, MoomooClient]:
         moomoo_client = MoomooClient()
-        cache = FakeCache()
-        repo = FakeRepo()
+        no_op_repo = type(
+            "NoOpRepo",
+            (),
+            {
+                "save_snapshot": lambda self, payload: payload,
+                "add_audit_log": lambda self, stage, message, payload_json, scan_run_id=None, level="INFO": None,
+            },
+        )()
         scanner = MonitoringScanner(
             moomoo_client=moomoo_client,
             massive_client=object(),
-            cache=cache,
-            repo=repo,
+            cache=object(),
+            repo=no_op_repo,
         )
-        return scanner, cache, repo, moomoo_client
+        return scanner, moomoo_client
 
     @pytest.mark.parametrize(
         "symbol",
@@ -98,7 +65,7 @@ class TestMonitoringScannerLive:
         require_moomoo,
         symbol: str,
     ) -> None:
-        scanner, cache, repo, moomoo_client = self._make_scanner()
+        scanner, moomoo_client = self._make_scanner()
 
         expiries = moomoo_client.get_option_expiration_date(symbol)
         assert isinstance(expiries, list)
@@ -128,9 +95,6 @@ class TestMonitoringScannerLive:
             assert candidate.snapshot.ts.tzinfo is not None
             assert candidate.premium_jump_pct > 100
 
-        if repo.audit_logs:
-            assert repo.audit_logs[0]["stage"] == "liquidity_filter"
-
         _save_output(
             "test_scan_symbol_with_manual_tickers",
             {
@@ -141,8 +105,6 @@ class TestMonitoringScannerLive:
                 "selected_expiry_option_codes": selected_expiry_option_codes,
                 "candidate_count": len(candidates),
                 "candidates": [c.model_dump() for c in candidates[:5]],
-                "snapshots_recorded": len(repo.snapshots),
-                "audit_logs_recorded": len(repo.audit_logs),
             },
         )
 

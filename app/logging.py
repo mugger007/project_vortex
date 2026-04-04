@@ -1,3 +1,5 @@
+﻿"""Structured logging configuration for the application."""
+
 import logging
 import sys
 
@@ -19,3 +21,4 @@ def configure_logging(level: str = "INFO") -> None:
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
+

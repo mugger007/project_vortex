@@ -1,3 +1,5 @@
+﻿"""End-to-end orchestration of scanning, analysis, synthesis, and persistence."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -17,7 +19,7 @@ from app.config import get_settings
 from app.db.repositories import ScanRepository
 from app.db.session import get_db_session
 from app.models.schemas import AnalysisBundle, RecommendationCard
-from app.risk.portfolio_engine import PortfolioRiskEngine
+# from app.risk.portfolio_engine import PortfolioRiskEngine
 from app.scanner.monitoring_scanner import MonitoringScanner
 from app.services.alerts import AlertService
 from app.synthesis.recommendation_engine import RecommendationEngine
@@ -33,11 +35,12 @@ class Orchestrator:
         self.gemini = GeminiClient()
         self.cache = RedisCache()
         self.alerts = AlertService()
-        self.watchlist = ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
+        self.watchlist = ["USO"]
 
     def run_scan_cycle(self) -> list[RecommendationCard]:
         cards: list[RecommendationCard] = []
         started = datetime.now(UTC)
+        logger.info("orchestrator_scan_cycle_started", started_at=started.isoformat(), watchlist_size=len(self.watchlist))
         with get_db_session() as db:
             repo = ScanRepository(db)
             scan_run = repo.create_scan_run(started_at=started, metadata_json={"interval": self.settings.scan_interval_minutes})
@@ -47,12 +50,14 @@ class Orchestrator:
             volatility = VolatilityAnalyzer(self.massive)
             trends = TrendAnalyzer(self.massive)
             events = EventRiskAnalyzer(self.massive)
-            regime = MarketRegimeAnalyzer(self.massive)
-            risk_engine = PortfolioRiskEngine(self.moomoo, self.massive)
+            regime = MarketRegimeAnalyzer()
+            # Risk engine temporarily disabled.
+            # risk_engine = PortfolioRiskEngine(self.moomoo, self.massive)
             recommender = RecommendationEngine(self.gemini)
 
             try:
                 positions = self.moomoo.get_option_positions()
+                logger.info("orchestrator_positions_loaded", positions_count=len(positions))
                 for p in positions:
                     repo.save_position_snapshot(
                         {
@@ -67,7 +72,9 @@ class Orchestrator:
                             "created_at": datetime.now(UTC),
                         }
                     )
+                logger.info("orchestrator_positions_saved", positions_count=len(positions))
             except Exception as exc:
+                logger.exception("orchestrator_positions_ingestion_failed")
                 repo.add_audit_log(
                     scan_run_id=scan_run.id,
                     stage="moomoo_ingestion",
@@ -81,6 +88,7 @@ class Orchestrator:
                 try:
                     candidates = scanner.scan_symbol(symbol)
                     total_candidates += len(candidates)
+                    logger.info("orchestrator_symbol_scanned", symbol=symbol, candidates=len(candidates))
                 except Exception as exc:
                     logger.exception("scan_symbol_failed", symbol=symbol)
                     repo.add_audit_log(
@@ -97,7 +105,7 @@ class Orchestrator:
                     hv_pct = volatility.analyze(candidate.symbol)
                     trend_score, trend_summary = trends.analyze(candidate.symbol)
                     event_flag, event_reason = events.analyze(candidate.symbol)
-                    regime_score, regime_summary = regime.analyze(candidate.symbol)
+                    regime_score, regime_summary = regime.analyze()
 
                     analysis = AnalysisBundle(
                         overreaction_score=over_score,
@@ -111,15 +119,21 @@ class Orchestrator:
                         regime_summary=regime_summary,
                     )
 
-                    risk = risk_engine.evaluate(
-                        symbol=candidate.symbol,
-                        candidate_delta=float(candidate.snapshot.extra.get("greeks", {}).get("delta", 0.0) or 0.0),
-                        candidate_vega=float(candidate.snapshot.extra.get("greeks", {}).get("vega", 0.0) or 0.0),
-                    )
+                    # Portfolio risk evaluation temporarily disabled.
+                    risk = None
 
                     recommendation = recommender.recommend(candidate, analysis, risk)
-                    rejected = (recommendation.recommendation == "Avoid") or (not risk.approved)
-                    rejection_reason = None if not rejected else risk.reason if not risk.approved else analysis.event_risk_reason
+                    rejected = recommendation.recommendation == "Avoid"
+                    rejection_reason = None if not rejected else analysis.event_risk_reason
+                    logger.info(
+                        "orchestrator_recommendation_generated",
+                        symbol=candidate.symbol,
+                        option_symbol=candidate.option_symbol,
+                        recommendation=recommendation.recommendation,
+                        confidence=recommendation.confidence,
+                        scorecard=recommendation.scorecard,
+                        rejected=rejected,
+                    )
 
                     repo.save_recommendation(
                         {
@@ -138,7 +152,7 @@ class Orchestrator:
                             "full_payload_json": {
                                 "candidate": candidate.model_dump(),
                                 "analysis": analysis.model_dump(),
-                                "risk": risk.model_dump(),
+                                "risk": (risk.model_dump() if risk is not None else {"disabled": True}),
                                 "recommendation": recommendation.model_dump(),
                             },
                             "created_at": datetime.now(UTC),
@@ -172,5 +186,13 @@ class Orchestrator:
                     "recommendations": len(cards),
                 },
             )
+            logger.info(
+                "orchestrator_scan_cycle_completed",
+                scan_run_id=scan_run.id,
+                watchlist_size=len(self.watchlist),
+                filtered_candidates=total_candidates,
+                recommendations=len(cards),
+            )
 
         return cards
+

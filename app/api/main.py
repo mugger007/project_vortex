@@ -1,3 +1,5 @@
+﻿"""FastAPI app bootstrap and lifecycle wiring."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -22,3 +24,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="weekly-options-scanner", lifespan=lifespan)
 app.include_router(router, prefix="/api")
+

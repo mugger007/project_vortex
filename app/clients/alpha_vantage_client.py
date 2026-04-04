@@ -1,3 +1,5 @@
+﻿"""Alpha Vantage API client for earnings calendar data."""
+
 from __future__ import annotations
 
 import csv
@@ -53,3 +55,4 @@ class AlphaVantageClient:
         rows = list(csv.DictReader(io.StringIO(text)))
         symbol_upper = symbol.upper()
         return [row for row in rows if str(row.get("symbol", "")).upper() == symbol_upper]
+

@@ -62,7 +62,7 @@ class TestOverreactionLive:
         gemini = GeminiClient()
         analyzer = OverreactionAnalyzer(massive=massive, gemini=gemini)
 
-        symbol = "USO"
+        symbol = live_symbols["massive_symbol"]
         try:
             news = massive.get_news(symbol=symbol, limit=15)
             likelihood, explanation = analyzer.analyze(symbol)

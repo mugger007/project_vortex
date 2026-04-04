@@ -1,3 +1,5 @@
+﻿"""ORM entity models for persistence tables."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -79,3 +81,4 @@ class AuditLog(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+

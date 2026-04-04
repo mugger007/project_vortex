@@ -1,3 +1,5 @@
+﻿"""Option monitoring scanner pipeline over chain and snapshot data."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -191,3 +193,4 @@ class MonitoringScanner:
                     )
                 )
         return candidates
+

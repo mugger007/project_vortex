@@ -1,3 +1,5 @@
+﻿"""Scanner filter helpers for expiry and liquidity checks."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -24,3 +26,4 @@ def liquidity_filter(oi: int, volume: int, bid: float, ask: float, premium: floa
     # if spread / premium >= 0.01:
         # return False, "Rejected: bid-ask spread >= 1% premium"
     return True, "Passed liquidity"
+

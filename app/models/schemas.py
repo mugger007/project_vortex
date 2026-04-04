@@ -1,3 +1,5 @@
+﻿"""Pydantic schemas for scanner, analysis, risk, and recommendation data."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -65,3 +67,4 @@ class RecommendationCard(BaseModel):
     data: RecommendationPayload
     rejected: bool
     rejection_reason: str | None = None
+

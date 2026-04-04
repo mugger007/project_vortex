@@ -1,3 +1,5 @@
+﻿"""Periodic scheduling entrypoints for orchestrated scan runs."""
+
 from __future__ import annotations
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -30,3 +32,4 @@ def start_scheduler() -> BackgroundScheduler:
     )
     scheduler.start()
     return scheduler
+
