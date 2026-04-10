@@ -65,7 +65,7 @@ class TestOverreactionLive:
         symbol = live_symbols["massive_symbol"]
         try:
             news = massive.get_news(symbol=symbol, limit=15)
-            likelihood, explanation = analyzer.analyze(symbol)
+            likelihood, explanation = analyzer.analyze(symbol, option_type="C")
             news_articles = _summarize_news_items(news)
 
             _save_output(

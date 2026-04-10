@@ -52,12 +52,16 @@ class _Moomoo:
 
 
 def test_scan_symbol_returns_candidate_when_filters_pass() -> None:
+    class _FakeYFinance:
+        def get_last_price(self, _symbol: str) -> float:
+            return 99.0
+
     repo = _Repo()
     scanner = MonitoringScanner(
         moomoo_client=_Moomoo(prev_close=1.0, bid=2.9, ask=3.1),
         massive_client=object(),
-        cache=object(),
         repo=repo,
+        yfinance=_FakeYFinance(),
     )
 
     candidates = scanner.scan_symbol("US.USO")
@@ -65,16 +69,19 @@ def test_scan_symbol_returns_candidate_when_filters_pass() -> None:
     assert len(candidates) == 1
     assert candidates[0].premium_jump_pct > 100
     assert len(repo.snapshots) == 1
-    assert len(repo.audit_logs) >= 1
 
 
 def test_scan_symbol_rejects_when_jump_below_threshold() -> None:
+    class _FakeYFinance:
+        def get_last_price(self, _symbol: str) -> float:
+            return 101.1
+
     repo = _Repo()
     scanner = MonitoringScanner(
         moomoo_client=_Moomoo(prev_close=2.0, bid=2.9, ask=3.1),
         massive_client=object(),
-        cache=object(),
         repo=repo,
+        yfinance=_FakeYFinance(),
     )
 
     candidates = scanner.scan_symbol("US.USO")

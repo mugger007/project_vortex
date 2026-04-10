@@ -1,1 +1,1 @@
-"""Risk engine package."""
+"""Portfolio-level risk evaluation and approval logic."""

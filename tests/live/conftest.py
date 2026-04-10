@@ -5,7 +5,6 @@ import socket
 from collections.abc import Generator
 
 import pytest
-import redis
 from sqlalchemy import create_engine, text
 
 from app.config import get_settings
@@ -41,15 +40,6 @@ def _db_reachable(dsn: str) -> bool:
         engine = create_engine(dsn, pool_pre_ping=True)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        return True
-    except Exception:
-        return False
-
-
-def _redis_reachable(url: str) -> bool:
-    try:
-        client = redis.from_url(url)
-        client.ping()
         return True
     except Exception:
         return False
@@ -120,5 +110,3 @@ def require_gemini(settings) -> None:
 def require_data_infra(settings) -> None:
     if not _db_reachable(settings.postgres_dsn):
         pytest.skip("PostgreSQL is not reachable")
-    if not _redis_reachable(settings.redis_url):
-        pytest.skip("Redis is not reachable")

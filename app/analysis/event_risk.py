@@ -14,10 +14,12 @@ logger = get_logger(__name__)
 
 class EventRiskAnalyzer:
     def __init__(self, massive: MassiveClient) -> None:
+        """Create an event-risk analyzer using Massive and Alpha Vantage feeds."""
         self.massive = massive
         self.alpha_vantage = AlphaVantageClient()
 
     def analyze(self, symbol: str) -> tuple[bool, str]:
+        """Flag whether the symbol has near-term earnings or dividend risk."""
         earnings = self.alpha_vantage.get_earnings_calendar(symbol)
         dividends = self.massive.get_dividend_calendar(symbol)
         logger.info(

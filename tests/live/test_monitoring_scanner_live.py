@@ -49,7 +49,6 @@ class TestMonitoringScannerLive:
         scanner = MonitoringScanner(
             moomoo_client=moomoo_client,
             massive_client=object(),
-            cache=object(),
             repo=no_op_repo,
         )
         return scanner, moomoo_client

@@ -12,14 +12,17 @@ from app.models.schemas import RiskDecision
 
 class PortfolioRiskEngine:
     def __init__(self, moomoo: MoomooClient, massive: MassiveClient, account_id: str = "default") -> None:
+        """Create a portfolio risk evaluator backed by Moomoo and Massive data."""
         self.moomoo = moomoo
         self.massive = massive
         self.account_id = account_id
 
     def _underlying_from_option(self, option_symbol: str) -> str:
+        """Extract the underlying ticker from a Moomoo-style option symbol."""
         return option_symbol.split("2", 1)[0][:5].replace("O:", "")
 
     def _build_corr(self, symbols: list[str]) -> pd.DataFrame:
+        """Build a correlation matrix from recent underlying return series."""
         series = {}
         for symbol in symbols:
             bars = self.massive.get_underlying_bars(symbol, timespan="day", limit=90)
@@ -37,6 +40,7 @@ class PortfolioRiskEngine:
         return joined.corr()
 
     def evaluate(self, symbol: str, candidate_delta: float, candidate_vega: float) -> RiskDecision:
+        """Approve or reject a candidate based on portfolio delta, vega, and correlation."""
         balances = self.moomoo.get_account_balances()
         positions = self.moomoo.get_option_positions()
         greeks_list = self.moomoo.get_position_greeks()

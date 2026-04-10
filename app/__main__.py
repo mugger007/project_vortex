@@ -19,10 +19,12 @@ from app.services.orchestrator import Orchestrator
 
 
 def init_db() -> None:
+    """Create all ORM tables for the configured database."""
     Base.metadata.create_all(bind=engine)
 
 
 def main() -> None:
+    """Parse CLI arguments and dispatch the requested app mode."""
     parser = argparse.ArgumentParser(description="weekly-options-scanner")
     parser.add_argument("--mode", choices=["api", "scheduler", "scan-once", "backtest"], default="api")
     parser.add_argument("--backtest-start", default="2024-01-01")

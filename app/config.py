@@ -1,9 +1,12 @@
 ﻿"""Application settings and environment configuration models."""
 
+import logging
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -17,10 +20,9 @@ class Settings(BaseSettings):
     streamlit_port: int = Field(default=8501, alias="STREAMLIT_PORT")
 
     scan_interval_minutes: int = Field(default=10, alias="SCAN_INTERVAL_MINUTES")
-    max_massive_calls_per_minute: int = Field(default=5, alias="MAX_MASSIVE_CALLS_PER_MINUTE")
+    watchlist: list[str] = Field(default_factory=lambda: ["SNOW"], alias="WATCHLIST")
 
     postgres_dsn: str = Field(alias="POSTGRES_DSN")
-    redis_url: str = Field(alias="REDIS_URL")
 
     massive_api_key: str = Field(alias="MASSIVE_API_KEY")
     massive_base_url: str = Field(alias="MASSIVE_BASE_URL")
@@ -41,6 +43,16 @@ class Settings(BaseSettings):
     smtp_password: str | None = Field(default=None, alias="SMTP_PASSWORD")
 
     backtest_mode: bool = Field(default=False, alias="BACKTEST_MODE")
+
+    @field_validator("watchlist", mode="before")
+    @classmethod
+    def _parse_watchlist(cls, value: object) -> object:
+        if isinstance(value, str):
+            parsed = [item.strip().upper() for item in value.split(",") if item.strip()]
+            if not parsed:
+                logger.warning("WATCHLIST is set but contains no valid tickers")
+            return parsed
+        return value
 
 
 @lru_cache

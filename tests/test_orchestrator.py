@@ -30,9 +30,6 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
     class FakeGemini:
         pass
 
-    class FakeCache:
-        pass
-
     class FakeAlerts:
         def __init__(self) -> None:
             self.notified = 0
@@ -56,6 +53,9 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
         def save_position_snapshot(self, payload: dict) -> None:
             self.saved_positions.append(payload)
 
+        def clear_position_snapshots(self) -> None:
+            self.saved_positions.clear()
+
         def add_audit_log(self, stage: str, message: str, payload_json: dict, scan_run_id=None, level: str = "INFO") -> None:
             self.audit_logs.append(
                 {
@@ -78,20 +78,20 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
             }
 
     class FakeScanner:
-        def __init__(self, moomoo_client, massive_client, cache, repo) -> None:
+        def __init__(self, moomoo_client, massive_client, repo) -> None:
             self.repo = repo
 
         def scan_symbol(self, symbol: str) -> list[FilteredCandidate]:
-            if symbol != "SPY":
+            if symbol != "US.SPY":
                 return []
             ts = datetime.now(timezone.utc)
             candidate = FilteredCandidate(
-                symbol="SPY",
+                symbol="US.SPY",
                 option_symbol="US.SPY260417C500000",
                 expiry="2026-04-17",
                 premium_jump_pct=140.0,
                 snapshot=OptionSnapshot(
-                    symbol="SPY",
+                    symbol="US.SPY",
                     option_symbol="US.SPY260417C500000",
                     expiry="2026-04-17",
                     premium=1.2,
@@ -109,7 +109,7 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
         def __init__(self, massive, gemini) -> None:
             pass
 
-        def analyze(self, symbol: str) -> tuple[float, str]:
+        def analyze(self, symbol: str, option_type: str = "C") -> tuple[float, str]:
             return 0.45, "unit overreaction"
 
     class FakeVolatility:
@@ -161,7 +161,6 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
     monkeypatch.setattr(orchestrator_module, "MoomooClient", FakeMoomoo)
     monkeypatch.setattr(orchestrator_module, "MassiveClient", FakeMassive)
     monkeypatch.setattr(orchestrator_module, "GeminiClient", FakeGemini)
-    monkeypatch.setattr(orchestrator_module, "RedisCache", FakeCache)
     monkeypatch.setattr(orchestrator_module, "AlertService", FakeAlerts)
     monkeypatch.setattr(orchestrator_module, "ScanRepository", FakeRepo)
     monkeypatch.setattr(orchestrator_module, "MonitoringScanner", FakeScanner)

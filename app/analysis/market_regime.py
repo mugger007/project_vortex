@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-import importlib
+from app.clients.yfinance_client import YFinanceClient
 
 
 class MarketRegimeAnalyzer:
+    def __init__(self, yfinance: YFinanceClient | None = None) -> None:
+        """Create a market regime analyzer backed by a reusable YFinance client."""
+        self.yfinance = yfinance or YFinanceClient()
+
     def _get_index_intraday_metrics(self, index_ticker: str) -> tuple[float, float]:
-        yf = importlib.import_module("yfinance")
-        ticker = yf.Ticker(index_ticker)
-        intraday_data = ticker.history(period="5d", interval="5m")
+        """Return latest index price and intraday percent change for a ticker."""
+        intraday_data = self.yfinance.get_history(index_ticker, period="5d", interval="5m")
         if intraday_data.empty:
             return 0.0, 0.0
 
@@ -29,9 +32,8 @@ class MarketRegimeAnalyzer:
         return current_price, percent_change
 
     def _get_index_prev_close_change_pct(self, index_ticker: str) -> float:
-        yf = importlib.import_module("yfinance")
-        ticker = yf.Ticker(index_ticker)
-        daily_data = ticker.history(period="7d", interval="1d")
+        """Return the percent change from the previous close for an index ticker."""
+        daily_data = self.yfinance.get_history(index_ticker, period="7d", interval="1d")
         if daily_data.empty or "Close" not in daily_data.columns:
             return 0.0
 
@@ -47,6 +49,7 @@ class MarketRegimeAnalyzer:
         return ((current_close - previous_close) / previous_close) * 100
 
     def analyze(self) -> tuple[float, str]:
+        """Score the current market regime and return a descriptive summary."""
         vix_value, vix_day_change = self._get_index_intraday_metrics("^VIX")
         _, index_change = self._get_index_intraday_metrics("^GSPC")
         vix_prev_close_change = self._get_index_prev_close_change_pct("^VIX")

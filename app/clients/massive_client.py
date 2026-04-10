@@ -19,24 +19,25 @@ class MassiveRateLimitError(RuntimeError):
 
 class MassiveClient:
     """Massive REST API client for underlying stock and index data.
-    
+
     Provides market data for equities, indices, and fundamental analysis.
-    
+
     API Reference: https://massive.com/docs/rest/stocks/tickers/ticker-overview
     """
     MAX_CALLS_PER_MINUTE = 5
     MAX_HISTORICAL_DAYS = 730
 
     def __init__(self) -> None:
+        """Create a Massive client with request throttling and retry support."""
         settings = get_settings()
         self.base_url = settings.massive_base_url.rstrip("/")
         self.api_key = settings.massive_api_key
-        configured_max = int(settings.max_massive_calls_per_minute or self.MAX_CALLS_PER_MINUTE)
-        self.max_calls = max(1, min(configured_max, self.MAX_CALLS_PER_MINUTE))
+        self.max_calls = self.MAX_CALLS_PER_MINUTE
         self._call_timestamps: deque[float] = deque()
         self.client = httpx.Client(timeout=30.0)
 
     def _throttle(self) -> None:
+        """Sleep until a new Massive request fits within the configured rate window."""
         now = time.time()
         while self._call_timestamps and now - self._call_timestamps[0] > 60:
             self._call_timestamps.popleft()
@@ -47,11 +48,13 @@ class MassiveClient:
         self._call_timestamps.append(time.time())
 
     def _coerce_date(self, value: date | str) -> date:
+        """Normalize a string or date value into a `date` instance."""
         if isinstance(value, date):
             return value
         return datetime.fromisoformat(str(value)).date()
 
     def _previous_market_day(self, reference_date: date | None = None) -> date:
+        """Return the latest prior weekday, skipping weekends."""
         d = (reference_date or datetime.now(UTC).date()) - timedelta(days=1)
         while d.weekday() >= 5:
             d -= timedelta(days=1)
@@ -64,6 +67,7 @@ class MassiveClient:
         reraise=True,
     )
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Perform a Massive API GET request with retry and API-key injection."""
         self._throttle()
         params = params or {}
         params["apiKey"] = self.api_key
@@ -81,6 +85,7 @@ class MassiveClient:
         from_date: date | str | None = None,
         to_date: date | str | None = None,
     ) -> list[dict[str, Any]]:
+        """Return historical OHLC aggregates for an underlying symbol."""
         resolved_to = self._coerce_date(to_date) if to_date is not None else self._previous_market_day()
         resolved_from = self._coerce_date(from_date) if from_date is not None else resolved_to - timedelta(days=self.MAX_HISTORICAL_DAYS)
 
@@ -100,10 +105,12 @@ class MassiveClient:
         return data.get("results", [])
 
     def get_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent news articles for the requested ticker."""
         data = self._get("/v2/reference/news", {"ticker": symbol, "limit": limit})
         return data.get("results", [])
 
     def get_dividend_calendar(self, symbol: str) -> list[dict[str, Any]]:
+        """Return dividend calendar rows for the requested ticker."""
         data = self._get("/v3/reference/dividends", {"ticker": symbol})
         return data.get("results", [])
 

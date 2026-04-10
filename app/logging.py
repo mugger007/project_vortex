@@ -7,6 +7,7 @@ import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:
+    """Configure stdout logging and structured JSON event formatting."""
     logging.basicConfig(stream=sys.stdout, level=getattr(logging, level.upper(), logging.INFO))
     structlog.configure(
         processors=[

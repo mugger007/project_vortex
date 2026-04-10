@@ -27,6 +27,7 @@ class HistoricalReplayRunner:
     """
 
     def run(self, config: ReplayConfig) -> dict:
+        """Run the historical replay scaffold and return a summary payload."""
         logger.info(
             "backtest_replay_started",
             start=config.start_date.isoformat(),

@@ -1,1 +1,1 @@
-"""FastAPI module."""
+"""FastAPI app bootstrap and HTTP route package."""

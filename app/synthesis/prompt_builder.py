@@ -11,6 +11,7 @@ def build_synthesis_prompt(
     risk: RiskDecision | None,
     scorecard: int,
 ) -> str:
+    """Build the strict-JSON Gemini prompt for final recommendation synthesis."""
     if risk is None:
         risk_lines = """
 Portfolio risk:

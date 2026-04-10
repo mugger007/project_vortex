@@ -66,7 +66,7 @@ def _build_candidate(symbol: str) -> FilteredCandidate:
     )
 
 
-def _build_analysis_from_live_apis(symbol: str) -> tuple[AnalysisBundle, dict[str, str]]:
+def _build_analysis_from_live_apis(symbol: str, option_type: str) -> tuple[AnalysisBundle, dict[str, str]]:
     rng = random.Random(17)
     source: dict[str, str] = {}
 
@@ -81,7 +81,7 @@ def _build_analysis_from_live_apis(symbol: str) -> tuple[AnalysisBundle, dict[st
 
     try:
         try:
-            overreaction_score, overreaction_explanation = overreaction_analyzer.analyze(symbol)
+            overreaction_score, overreaction_explanation = overreaction_analyzer.analyze(symbol, option_type=option_type)
             source["overreaction"] = "live"
         except Exception:
             overreaction_score, overreaction_explanation = (0.45, "Fallback overreaction explanation")
@@ -145,7 +145,7 @@ class TestRecommendationEngineLive:
         engine = RecommendationEngine(gemini=gemini)
 
         candidate = _build_candidate(symbol)
-        analysis, source = _build_analysis_from_live_apis(symbol)
+        analysis, source = _build_analysis_from_live_apis(symbol, candidate.option_type)
 
         logger.info(
             "recommendation_live_input_sources",

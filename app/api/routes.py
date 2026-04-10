@@ -15,17 +15,20 @@ router = APIRouter()
 
 @router.get("/health")
 def healthcheck() -> dict:
+    """Return a simple API health status and server timestamp."""
     return {"status": "ok", "ts": datetime.now(UTC).isoformat()}
 
 
 @router.post("/scan/run")
 def run_scan_once() -> dict:
+    """Run a single scan cycle and return the generated recommendation cards."""
     cards = Orchestrator().run_scan_cycle()
     return {"count": len(cards), "items": [c.model_dump() for c in cards]}
 
 
 @router.get("/recommendations")
 def list_recommendations(limit: int = 50) -> dict:
+    """Return the latest persisted recommendations from Postgres."""
     with get_db_session() as db:
         repo = ScanRepository(db)
         recs = repo.list_recommendations(limit=limit)

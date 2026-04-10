@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 from structlog import get_logger
 
-from app.cache.redis_client import RedisCache
 from app.clients.massive_client import MassiveClient
 from app.clients.moomoo_client import MoomooClient
+from app.clients.yfinance_client import YFinanceClient
 from app.db.repositories import ScanRepository
 from app.models.schemas import FilteredCandidate, OptionSnapshot
-from app.scanner.filters import _is_expiry_in_current_week, liquidity_filter
+from app.scanner.filters import _is_expiry_in_current_week, _is_option_otm
 
 logger = get_logger(__name__)
 
@@ -29,15 +29,33 @@ class MonitoringScanner:
         self,
         moomoo_client: MoomooClient,
         massive_client: MassiveClient,
-        cache: RedisCache,
         repo: ScanRepository,
+        yfinance: YFinanceClient | None = None,
     ) -> None:
+        """Create the option-chain scanner with provider and persistence dependencies."""
         self.moomoo_client = moomoo_client
         self.massive_client = massive_client
-        self.cache = cache
         self.repo = repo
+        self.yfinance = yfinance or YFinanceClient()
+
+    def _to_underlying_symbol(self, symbol: str) -> str:
+        """Strip provider prefixes so yfinance can query the underlying ticker."""
+        return symbol.split(".", 1)[1] if "." in symbol else symbol
+
+    def _current_stock_price(self, symbol: str) -> float:
+        """Fetch the current underlying stock price once per scanned symbol."""
+        underlying = self._to_underlying_symbol(symbol)
+        current_close = self.yfinance.get_last_price(underlying)
+        logger.info(
+            "scanner_current_stock_price_loaded",
+            symbol=symbol,
+            underlying_symbol=underlying,
+            current_stock_price=current_close,
+        )
+        return current_close
 
     def _to_datetime(self, value: object) -> datetime:
+        """Coerce provider timestamps into timezone-aware datetimes."""
         if isinstance(value, datetime):
             return value
         if isinstance(value, str):
@@ -55,10 +73,10 @@ class MonitoringScanner:
         2. Query option chain for all available strikes
         3. Filter for weekly Friday expiries
         4. Detect premium spikes (>500% jump from cached value)
-        5. Apply liquidity filters (OI, volume, bid-ask spread)
-        6. Return candidates for downstream analysis
+        5. Return candidates for downstream analysis
         """
         expiry_dates = self.moomoo_client.get_option_expiration_date(symbol)
+        current_stock_price = self._current_stock_price(symbol)
         candidates: list[FilteredCandidate] = []
         
         for expiry in expiry_dates:
@@ -149,26 +167,13 @@ class MonitoringScanner:
                     )
                     continue
 
-                passed, reason = liquidity_filter(oi=oi, volume=volume, bid=bid, ask=ask, premium=premium)
-                self.repo.add_audit_log(
-                    stage="liquidity_filter",
-                    message=reason,
-                    payload_json={"symbol": symbol, "option_symbol": option_symbol, "jump_pct": jump_pct},
-                )
-                if not passed:
+                if not _is_option_otm(option_symbol=option_symbol, underlying_price=current_stock_price):
                     logger.info(
-                        "option_rejected_liquidity",
+                        "option_rejected_not_otm",
                         symbol=symbol,
                         expiry=expiry,
                         option_symbol=option_symbol,
-                        reason=reason,
-                        jump_pct=jump_pct,
-                        oi=oi,
-                        volume=volume,
-                        bid=bid,
-                        ask=ask,
-                        premium=premium,
-                        spread_ratio=spread_ratio,
+                        underlying_price=current_stock_price,
                     )
                     continue
 

@@ -14,6 +14,7 @@ from app.scheduler import start_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Initialize logging and the scheduler for the API process lifecycle."""
     settings = get_settings()
     configure_logging(settings.log_level)
     scheduler = start_scheduler()

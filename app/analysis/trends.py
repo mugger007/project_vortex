@@ -19,9 +19,11 @@ class TrendAnalyzer:
     LOOKBACK_CALENDAR_DAYS = 400
 
     def __init__(self, massive: MassiveClient) -> None:
+        """Create a trend analyzer backed by Massive historical bars."""
         self.massive = massive
 
     def analyze(self, symbol: str) -> tuple[float, str]:
+        """Score trend strength from moving averages and momentum indicators."""
         to_date = datetime.now(UTC).date() - timedelta(days=1)
         while to_date.weekday() >= 5:
             to_date -= timedelta(days=1)

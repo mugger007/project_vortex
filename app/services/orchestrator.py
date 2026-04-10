@@ -11,7 +11,6 @@ from app.analysis.market_regime import MarketRegimeAnalyzer
 from app.analysis.overreaction import OverreactionAnalyzer
 from app.analysis.trends import TrendAnalyzer
 from app.analysis.volatility import VolatilityAnalyzer
-from app.cache.redis_client import RedisCache
 from app.clients.gemini_client import GeminiClient
 from app.clients.massive_client import MassiveClient
 from app.clients.moomoo_client import MoomooClient
@@ -29,15 +28,26 @@ logger = get_logger(__name__)
 
 class Orchestrator:
     def __init__(self) -> None:
+        """Create the end-to-end scan orchestrator and its provider clients."""
         self.settings = get_settings()
         self.massive = MassiveClient()
         self.moomoo = MoomooClient()
         self.gemini = GeminiClient()
-        self.cache = RedisCache()
         self.alerts = AlertService()
-        self.watchlist = ["USO"]
+        self.watchlist = getattr(self.settings, "watchlist", ["SNOW"])
+
+    def _to_moomoo_symbol(self, symbol: str) -> str:
+        """Normalize a bare ticker into the Moomoo-prefixed symbol format."""
+        # Moomoo expects market-prefixed symbols like US.SNOW.
+        return symbol if "." in symbol else f"US.{symbol}"
+
+    def _to_analysis_symbol(self, symbol: str) -> str:
+        """Normalize a provider-prefixed symbol into a bare analysis ticker."""
+        # Massive/analyzers expect bare symbols like SNOW.
+        return symbol.split(".", 1)[1] if "." in symbol else symbol
 
     def run_scan_cycle(self) -> list[RecommendationCard]:
+        """Run the full scan, analysis, synthesis, and persistence workflow."""
         cards: list[RecommendationCard] = []
         started = datetime.now(UTC)
         logger.info("orchestrator_scan_cycle_started", started_at=started.isoformat(), watchlist_size=len(self.watchlist))
@@ -45,7 +55,7 @@ class Orchestrator:
             repo = ScanRepository(db)
             scan_run = repo.create_scan_run(started_at=started, metadata_json={"interval": self.settings.scan_interval_minutes})
 
-            scanner = MonitoringScanner(self.moomoo, self.massive, self.cache, repo)
+            scanner = MonitoringScanner(self.moomoo, self.massive, repo)
             overreaction = OverreactionAnalyzer(self.massive, self.gemini)
             volatility = VolatilityAnalyzer(self.massive)
             trends = TrendAnalyzer(self.massive)
@@ -58,6 +68,7 @@ class Orchestrator:
             try:
                 positions = self.moomoo.get_option_positions()
                 logger.info("orchestrator_positions_loaded", positions_count=len(positions))
+                repo.clear_position_snapshots()
                 for p in positions:
                     repo.save_position_snapshot(
                         {
@@ -84,97 +95,138 @@ class Orchestrator:
                 )
 
             total_candidates = 0
+            all_candidates = []
             for symbol in self.watchlist:
+                moomoo_symbol = self._to_moomoo_symbol(symbol)
                 try:
-                    candidates = scanner.scan_symbol(symbol)
+                    candidates = scanner.scan_symbol(moomoo_symbol)
                     total_candidates += len(candidates)
-                    logger.info("orchestrator_symbol_scanned", symbol=symbol, candidates=len(candidates))
+                    logger.info(
+                        "orchestrator_symbol_scanned",
+                        symbol=symbol,
+                        moomoo_symbol=moomoo_symbol,
+                        candidates=len(candidates),
+                    )
                 except Exception as exc:
-                    logger.exception("scan_symbol_failed", symbol=symbol)
+                    logger.exception("scan_symbol_failed", symbol=symbol, moomoo_symbol=moomoo_symbol)
                     repo.add_audit_log(
                         scan_run_id=scan_run.id,
                         stage="scan_symbol",
                         level="ERROR",
                         message="scan symbol failed",
-                        payload_json={"symbol": symbol, "error": str(exc)},
+                        payload_json={"symbol": symbol, "moomoo_symbol": moomoo_symbol, "error": str(exc)},
                     )
                     continue
 
-                for candidate in candidates:
-                    over_score, over_text = overreaction.analyze(candidate.symbol)
-                    hv_pct = volatility.analyze(candidate.symbol)
-                    trend_score, trend_summary = trends.analyze(candidate.symbol)
-                    event_flag, event_reason = events.analyze(candidate.symbol)
-                    regime_score, regime_summary = regime.analyze()
+                if not candidates:
+                    logger.info("orchestrator_no_candidates", symbol=symbol, moomoo_symbol=moomoo_symbol)
+                    continue
 
-                    analysis = AnalysisBundle(
-                        overreaction_score=over_score,
-                        overreaction_explanation=over_text,
-                        hv_percentile=hv_pct,
-                        trend_score=trend_score,
-                        trend_summary=trend_summary,
-                        event_risk_flag=event_flag,
-                        event_risk_reason=event_reason,
-                        regime_score=regime_score,
-                        regime_summary=regime_summary,
+                all_candidates.extend(candidates)
+
+            analysis_cache = {}
+            symbol_metrics_cache = {}
+            regime_score = 0.0
+            regime_summary = ""
+            if all_candidates:
+                regime_score, regime_summary = regime.analyze()
+
+            for candidate in all_candidates:
+                analysis_symbol = self._to_analysis_symbol(candidate.symbol)
+                cache_key = (analysis_symbol, candidate.option_type)
+                if cache_key in analysis_cache:
+                    continue
+
+                if analysis_symbol in symbol_metrics_cache:
+                    hv_pct, trend_score, trend_summary, event_flag, event_reason = symbol_metrics_cache[analysis_symbol]
+                else:
+                    hv_pct = volatility.analyze(analysis_symbol)
+                    trend_score, trend_summary = trends.analyze(analysis_symbol)
+                    event_flag, event_reason = events.analyze(analysis_symbol)
+                    symbol_metrics_cache[analysis_symbol] = (
+                        hv_pct,
+                        trend_score,
+                        trend_summary,
+                        event_flag,
+                        event_reason,
                     )
 
-                    # Portfolio risk evaluation temporarily disabled.
-                    risk = None
+                over_score, over_text = overreaction.analyze(analysis_symbol, candidate.option_type)
 
-                    recommendation = recommender.recommend(candidate, analysis, risk)
-                    rejected = recommendation.recommendation == "Avoid"
-                    rejection_reason = None if not rejected else analysis.event_risk_reason
-                    logger.info(
-                        "orchestrator_recommendation_generated",
-                        symbol=candidate.symbol,
-                        option_symbol=candidate.option_symbol,
-                        recommendation=recommendation.recommendation,
-                        confidence=recommendation.confidence,
-                        scorecard=recommendation.scorecard,
-                        rejected=rejected,
-                    )
+                analysis_cache[cache_key] = AnalysisBundle(
+                    overreaction_score=over_score,
+                    overreaction_explanation=over_text,
+                    hv_percentile=hv_pct,
+                    trend_score=trend_score,
+                    trend_summary=trend_summary,
+                    event_risk_flag=event_flag,
+                    event_risk_reason=event_reason,
+                    regime_score=regime_score,
+                    regime_summary=regime_summary,
+                )
 
-                    repo.save_recommendation(
-                        {
-                            "scan_run_id": scan_run.id,
-                            "symbol": candidate.symbol,
-                            "option_symbol": candidate.option_symbol,
-                            "recommendation": recommendation.recommendation,
-                            "confidence": recommendation.confidence,
-                            "scorecard": recommendation.scorecard,
-                            "reason": recommendation.explanation,
-                            "suggested_strike": recommendation.suggested_strike,
-                            "suggested_delta": recommendation.suggested_delta,
-                            "estimated_theta": recommendation.estimated_theta,
-                            "estimated_vega": recommendation.estimated_vega,
-                            "rejected": rejected,
-                            "full_payload_json": {
-                                "candidate": candidate.model_dump(),
-                                "analysis": analysis.model_dump(),
-                                "risk": (risk.model_dump() if risk is not None else {"disabled": True}),
-                                "recommendation": recommendation.model_dump(),
-                            },
-                            "created_at": datetime.now(UTC),
-                        }
-                    )
+            for candidate in all_candidates:
+                candidate_symbol = self._to_analysis_symbol(candidate.symbol)
+                analysis = analysis_cache[(candidate_symbol, candidate.option_type)]
 
-                    card = RecommendationCard(
-                        symbol=candidate.symbol,
-                        option_symbol=candidate.option_symbol,
-                        created_at=datetime.now(UTC),
-                        data=recommendation,
-                        rejected=rejected,
-                        rejection_reason=rejection_reason,
-                    )
-                    cards.append(card)
-                    repo.add_audit_log(
-                        scan_run_id=scan_run.id,
-                        stage="recommendation",
-                        message="recommendation generated",
-                        payload_json=card.model_dump(),
-                    )
-                    self.alerts.notify_high_confidence(card)
+                # Portfolio risk evaluation temporarily disabled.
+                risk = None
+
+                recommendation = recommender.recommend(candidate, analysis, risk)
+                rejected = recommendation.recommendation == "Avoid"
+                rejection_reason = None if not rejected else analysis.event_risk_reason
+                logger.info(
+                    "orchestrator_recommendation_generated",
+                    symbol=candidate_symbol,
+                    option_type=candidate.option_type,
+                    moomoo_symbol=candidate.symbol,
+                    option_symbol=candidate.option_symbol,
+                    recommendation=recommendation.recommendation,
+                    confidence=recommendation.confidence,
+                    scorecard=recommendation.scorecard,
+                    rejected=rejected,
+                )
+
+                repo.save_recommendation(
+                    {
+                        "scan_run_id": scan_run.id,
+                        "symbol": candidate_symbol,
+                        "option_symbol": candidate.option_symbol,
+                        "recommendation": recommendation.recommendation,
+                        "confidence": recommendation.confidence,
+                        "scorecard": recommendation.scorecard,
+                        "reason": recommendation.explanation,
+                        "suggested_strike": recommendation.suggested_strike,
+                        "suggested_delta": recommendation.suggested_delta,
+                        "estimated_theta": recommendation.estimated_theta,
+                        "estimated_vega": recommendation.estimated_vega,
+                        "rejected": rejected,
+                        "full_payload_json": {
+                            "candidate": candidate.model_dump(),
+                            "analysis": analysis.model_dump(),
+                            "risk": (risk.model_dump() if risk is not None else {"disabled": True}),
+                            "recommendation": recommendation.model_dump(),
+                        },
+                        "created_at": datetime.now(UTC),
+                    }
+                )
+
+                card = RecommendationCard(
+                    symbol=candidate_symbol,
+                    option_symbol=candidate.option_symbol,
+                    created_at=datetime.now(UTC),
+                    data=recommendation,
+                    rejected=rejected,
+                    rejection_reason=rejection_reason,
+                )
+                cards.append(card)
+                repo.add_audit_log(
+                    scan_run_id=scan_run.id,
+                    stage="recommendation",
+                    message="recommendation generated",
+                    payload_json=card.model_dump(),
+                )
+                self.alerts.notify_high_confidence(card)
 
             repo.complete_scan_run(
                 scan_run.id,

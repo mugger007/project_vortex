@@ -13,15 +13,18 @@ from app.models.schemas import RecommendationCard
 
 class AlertService:
     def __init__(self) -> None:
+        """Load alert delivery settings for optional outbound notifications."""
         self.settings = get_settings()
 
     def _send_telegram(self, message: str) -> None:
+        """Send a Telegram message when Telegram credentials are configured."""
         if not self.settings.telegram_bot_token or not self.settings.telegram_chat_id:
             return
         url = f"https://api.telegram.org/bot{self.settings.telegram_bot_token}/sendMessage"
         httpx.post(url, json={"chat_id": self.settings.telegram_chat_id, "text": message}, timeout=10.0)
 
     def _send_email(self, subject: str, message: str) -> None:
+        """Send an email alert when SMTP and recipient settings are configured."""
         if not all(
             [
                 self.settings.alert_email_from,
@@ -44,6 +47,7 @@ class AlertService:
             server.send_message(mime)
 
     def notify_high_confidence(self, card: RecommendationCard) -> None:
+        """Notify only on high-confidence, non-rejected recommendations."""
         if card.data.confidence < 80 or card.rejected:
             return
         message = (

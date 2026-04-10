@@ -13,6 +13,7 @@ logger = get_logger(__name__)
 
 
 def start_scheduler() -> BackgroundScheduler:
+    """Start the background scheduler that runs orchestrated scans on an interval."""
     settings = get_settings()
     orchestrator = Orchestrator()
     scheduler = BackgroundScheduler(timezone="UTC")

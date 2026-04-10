@@ -4,6 +4,8 @@ Production framework for US equity weekly options premium-selling recommendation
 
 The system scans for large option-premium jumps, applies hard filters/risk gates, runs analysis + synthesis, and outputs reviewable recommendation cards. It does not auto-trade.
 
+Each module under `app/` includes a short file-level description comment, and key public functions carry docstrings so the runtime flow is easier to trace while reading the source.
+
 ## Data Provider Responsibilities
 
 - Moomoo OpenD (local SDK):
@@ -58,7 +60,6 @@ weekly-options-scanner/
 |   |   `-- streamlit_app.py
 |   |-- db/
 |   |-- models/
-|   |-- cache/
 |   `-- utils/
 |-- tests/
 |   |-- conftest.py
@@ -100,6 +101,7 @@ weekly-options-scanner/
 - `app/clients/moomoo_client.py`: OpenD quote/trade contexts and wrappers for funds/positions/Greeks/options/snapshot.
 - `app/clients/alpha_vantage_client.py`: Alpha Vantage earnings-calendar adapter.
 - `app/clients/gemini_client.py`: Gemini integration for narrative/synthesis generation.
+- `app/clients/yfinance_client.py`: yfinance adapter for intraday, daily, and fast-info spot lookups.
 - `app/scanner/monitoring_scanner.py`: option-universe pull + filtering pipeline over provider clients.
 - `app/analysis/`: signal and market-state analytics (regime, volatility, trends, event risk, overreaction).
 - `app/risk/portfolio_engine.py`: portfolio-level risk evaluation and gating logic.
@@ -111,14 +113,13 @@ weekly-options-scanner/
 - `app/dashboard/streamlit_app.py`: Streamlit operations and monitoring UI.
 - `app/db/`: database session, migrations integration points, and persistence helpers.
 - `app/models/`: ORM/domain models (scan runs, recommendations, audit data, etc.).
-- `app/cache/`: Redis cache helper logic and key access paths.
 - `app/utils/`: reusable utility functions shared across modules.
 - `tests/test_imports.py`: import smoke test for base module integrity.
 - `tests/conftest.py`: deterministic shared fixtures for unit tests.
 - `tests/test_orchestrator.py`: isolated orchestration unit test using monkeypatched dependencies.
 - `tests/test_market_regime_unit.py`: deterministic market regime scoring tests using mocked yfinance metrics.
 - `tests/test_recommendation_engine_unit.py`: recommendation/scorecard unit tests including hard-block behavior.
-- `tests/test_monitoring_scanner_unit.py`: scanner unit tests for jump-threshold and liquidity pass/reject paths.
+- `tests/test_monitoring_scanner_unit.py`: scanner unit tests for jump-threshold and OTM pass/reject paths.
 - `tests/live/conftest.py`: `--run-live` gating, provider readiness checks, and live-symbol fixtures.
 - `tests/live/test_moomoo_live.py`: live OpenD validation for quotes/options/funds/positions/Greeks.
 - `tests/live/test_massive_live.py`: live Massive validation for bars/news/calendar/dividends/index bars.
@@ -137,6 +138,7 @@ weekly-options-scanner/
 - Unit tests are deterministic and isolated from external infra/providers.
 - Live tests are gated behind `--run-live` and should use `live_symbols` from `tests/live/conftest.py` rather than hardcoded tickers.
 - Live recommendation test is intentionally decoupled from cross-test artifact dependencies.
+- Source files are documented with module-level descriptions and key-function docstrings to make the pipeline easier to follow.
 
 ## Status
 

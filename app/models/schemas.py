@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OptionSnapshot(BaseModel):
@@ -23,9 +24,23 @@ class OptionSnapshot(BaseModel):
 class FilteredCandidate(BaseModel):
     symbol: str
     option_symbol: str
+    option_type: str = ""
     expiry: str
     premium_jump_pct: float
     snapshot: OptionSnapshot
+
+    @model_validator(mode="after")
+    def _extract_option_type(self) -> FilteredCandidate:
+        match = re.search(r"\d{6}([CP])\d+(?:\.\d+)?$", self.option_symbol)
+        if match is None:
+            raise ValueError("option_symbol must include option type C/P after a 6-digit expiry")
+
+        extracted = match.group(1)
+        if self.option_type and self.option_type != extracted:
+            raise ValueError("option_type does not match option_symbol")
+
+        self.option_type = extracted
+        return self
 
 
 class AnalysisBundle(BaseModel):
