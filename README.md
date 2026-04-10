@@ -8,23 +8,31 @@ Each module under `app/` includes a short file-level description comment, and ke
 
 ## Data Provider Responsibilities
 
-- Moomoo OpenD (local SDK):
-  - Option expiration dates and option chains
-  - Account funds, positions, and position Greeks
-  - Option quote snapshots (including OI and pricing fields)
-- Massive REST API:
-  - Underlying bars
-  - News
-  - Dividends
-  - Ticker reference/overview lookups
-  - Historical window and rate-limit constrained transport for analysis inputs
-- Alpha Vantage REST API:
-  - Earnings calendar lookups used in event-risk analysis
-- yfinance:
-  - Index intraday snapshots used by market-regime analytics (`^VIX`, `^GSPC`)
-  - Index previous-close change calculations used in market-regime summaries
-- Gemini API:
-  - Structured JSON generation for overreaction and recommendation synthesis
+- **Moomoo OpenD** (local daemon via port 11111):
+  - Option expiration dates and option chains per underlying
+  - Account balances and cash available for trading
+  - Current option positions with account snapshot
+  - Position Greeks (delta, vega, theta, gamma)
+  - Quote snapshots including bid/ask, last price, OI, and volume
+  - Built-in per-method rate limiting to respect API constraints
+
+- **Massive REST API** (market data aggregator):
+  - Historical OHLC bars for equities and fundamentals (supports day/week/month aggregations, up to 730 days)
+  - Recent news articles (fetched with limit parameter)
+  - Dividend calendar entries per ticker
+  - Automatic throttling at 5 calls/minute with exponential backoff retry logic
+
+- **yfinance** (free market data):
+  - Historical OHLCV data (1m, 5m, hourly, daily, etc.) for any tradeable symbol
+  - Fast info snapshots for latest spot prices and market metadata
+  - Index data for market regime (`^VIX`, `^GSPC`)
+
+- **Alpha Vantage REST API** (fundamental data):
+  - Earnings calendar entries (parsed from CSV response, filtered by symbol)
+
+- **Gemini API** (large language model):
+  - Structured JSON synthesis for overreaction/bullish likelihood analysis given news context (with model fallback and per-model RPM throttling)
+  - Final recommendation card generation with confidence and delta/theta/vega guidance
 
 ## Project Structure and Key Functions
 

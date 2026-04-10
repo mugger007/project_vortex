@@ -125,6 +125,7 @@ class Orchestrator:
                 all_candidates.extend(candidates)
 
             analysis_cache = {}
+            recommendation_cache = {}
             symbol_metrics_cache = {}
             regime_score = 0.0
             regime_summary = ""
@@ -167,12 +168,18 @@ class Orchestrator:
 
             for candidate in all_candidates:
                 candidate_symbol = self._to_analysis_symbol(candidate.symbol)
-                analysis = analysis_cache[(candidate_symbol, candidate.option_type)]
+                cache_key = (candidate_symbol, candidate.option_type)
+                analysis = analysis_cache[cache_key]
 
                 # Portfolio risk evaluation temporarily disabled.
                 risk = None
 
-                recommendation = recommender.recommend(candidate, analysis, risk)
+                if cache_key in recommendation_cache:
+                    recommendation = recommendation_cache[cache_key]
+                else:
+                    recommendation = recommender.recommend(candidate, analysis, risk)
+                    recommendation_cache[cache_key] = recommendation
+
                 rejected = recommendation.recommendation == "Avoid"
                 rejection_reason = None if not rejected else analysis.event_risk_reason
                 logger.info(

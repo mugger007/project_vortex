@@ -12,7 +12,7 @@ from app.clients.moomoo_client import MoomooClient
 from app.clients.yfinance_client import YFinanceClient
 from app.db.repositories import ScanRepository
 from app.models.schemas import FilteredCandidate, OptionSnapshot
-from app.scanner.filters import _is_expiry_in_current_week, _is_option_otm
+from app.scanner.filters import _is_expiry_in_current_week, _is_option_otm, _is_last_price_above_threshold
 
 logger = get_logger(__name__)
 
@@ -174,6 +174,17 @@ class MonitoringScanner:
                         expiry=expiry,
                         option_symbol=option_symbol,
                         underlying_price=current_stock_price,
+                    )
+                    continue
+
+                if not _is_last_price_above_threshold(last_price=last_price, min_price=1.0):
+                    logger.info(
+                        "option_rejected_below_min_price",
+                        symbol=symbol,
+                        expiry=expiry,
+                        option_symbol=option_symbol,
+                        last_price=last_price,
+                        min_threshold=1.0,
                     )
                     continue
 

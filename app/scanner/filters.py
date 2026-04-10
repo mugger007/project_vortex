@@ -43,3 +43,8 @@ def _is_option_otm(option_symbol: str, underlying_price: float) -> bool:
         return strike > underlying_price
     return strike < underlying_price
 
+
+def _is_last_price_above_threshold(last_price: float, min_price: float = 1.0) -> bool:
+    """Check if an option's last price meets the minimum threshold."""
+    return last_price > min_price
+
