@@ -2,9 +2,10 @@
 
 import logging
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +21,14 @@ class Settings(BaseSettings):
     streamlit_port: int = Field(default=8501, alias="STREAMLIT_PORT")
 
     scan_interval_minutes: int = Field(default=10, alias="SCAN_INTERVAL_MINUTES")
-    watchlist: list[str] = Field(default_factory=lambda: ["SNOW"], alias="WATCHLIST")
+    watchlist: Annotated[list[str], NoDecode] = Field(alias="WATCHLIST")
 
     postgres_dsn: str = Field(alias="POSTGRES_DSN")
 
     massive_api_key: str = Field(alias="MASSIVE_API_KEY")
     massive_base_url: str = Field(alias="MASSIVE_BASE_URL")
-    alpha_vantage_api_key: str | None = Field(default=None, alias="ALPHA_VANTAGE_API_KEY")
+    alpha_vantage_api_key: str | None = Field(alias="ALPHA_VANTAGE_API_KEY")
+    finnhub_api_key: str | None = Field(alias="FINNHUB_API_KEY")
 
     moomoo_opend_host: str = Field(default="127.0.0.1", alias="MOOMOO_OPEND_HOST")
     moomoo_opend_port: int = Field(default=11111, alias="MOOMOO_OPEND_PORT")

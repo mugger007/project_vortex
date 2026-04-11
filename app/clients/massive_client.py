@@ -85,22 +85,36 @@ class MassiveClient:
         from_date: date | str | None = None,
         to_date: date | str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return historical OHLC aggregates for an underlying symbol."""
+        """Return historical OHLC aggregates for an underlying symbol.
+
+        Args:
+            symbol: Stock ticker symbol.
+            timespan: Bar size ('day', 'week', 'month', etc.). Defaults to 'day'.
+            limit: Number of bars to request.
+            from_date: Start date (optional; defaults to lookback from to_date).
+            to_date: End date (optional; defaults to previous market day).
+
+        The API's 730-day historical limit applies regardless of timespan.
+        """
         resolved_to = self._coerce_date(to_date) if to_date is not None else self._previous_market_day()
-        resolved_from = self._coerce_date(from_date) if from_date is not None else resolved_to - timedelta(days=self.MAX_HISTORICAL_DAYS)
+        requested_limit = max(1, int(limit or 1))
+        max_window_start = resolved_to - timedelta(days=self.MAX_HISTORICAL_DAYS)
+
+        if from_date is not None:
+            resolved_from = self._coerce_date(from_date)
+        else:
+            # Simple lookback: 1.5x the limit in days as a buffer
+            lookback_days = max(1, int(requested_limit * 1.5))
+            resolved_from = resolved_to - timedelta(days=lookback_days)
 
         if resolved_from > resolved_to:
             resolved_from = resolved_to
-
-        max_window_start = resolved_to - timedelta(days=self.MAX_HISTORICAL_DAYS)
         if resolved_from < max_window_start:
             resolved_from = max_window_start
 
-        max_rows_by_window = max(1, (resolved_to - resolved_from).days + 1)
-        bounded_limit = max(1, min(int(limit or 1), self.MAX_HISTORICAL_DAYS, max_rows_by_window))
         data = self._get(
             f"/v2/aggs/ticker/{symbol}/range/1/{timespan}/{resolved_from.isoformat()}/{resolved_to.isoformat()}",
-            {"limit": bounded_limit},
+            {"limit": requested_limit},
         )
         return data.get("results", [])
 

@@ -73,10 +73,10 @@ def settings():
 @pytest.fixture(scope="session")
 def live_symbols() -> dict[str, str]:
     return {
-        "massive_symbol": os.getenv("LIVE_MASSIVE_SYMBOL", "USO"),
-        "alpha_vantage_symbol": os.getenv("LIVE_ALPHA_VANTAGE_SYMBOL", "USO"),
-        "moomoo_quote_symbol": os.getenv("LIVE_MOOMOO_QUOTE_SYMBOL", "US.USO"),
-        "moomoo_option_symbol": os.getenv("LIVE_MOOMOO_OPTION_SYMBOL", "US.USO260417C100000"),
+        "massive_symbol": os.getenv("LIVE_MASSIVE_SYMBOL", "SNOW"),
+        "alpha_vantage_symbol": os.getenv("LIVE_ALPHA_VANTAGE_SYMBOL", "SNOW"),
+        "moomoo_quote_symbol": os.getenv("LIVE_MOOMOO_QUOTE_SYMBOL", "US.SNOW"),
+        "moomoo_option_symbol": os.getenv("LIVE_MOOMOO_OPTION_SYMBOL", "US.SNOW260417C130000"),
     }
 
 

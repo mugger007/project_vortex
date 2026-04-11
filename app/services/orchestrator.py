@@ -11,9 +11,11 @@ from app.analysis.market_regime import MarketRegimeAnalyzer
 from app.analysis.overreaction import OverreactionAnalyzer
 from app.analysis.trends import TrendAnalyzer
 from app.analysis.volatility import VolatilityAnalyzer
+from app.clients.finnhub_client import FinnhubClient
 from app.clients.gemini_client import GeminiClient
 from app.clients.massive_client import MassiveClient
 from app.clients.moomoo_client import MoomooClient
+from app.clients.yfinance_client import YFinanceClient
 from app.config import get_settings
 from app.db.repositories import ScanRepository
 from app.db.session import get_db_session
@@ -32,6 +34,14 @@ class Orchestrator:
         self.settings = get_settings()
         self.massive = MassiveClient()
         self.moomoo = MoomooClient()
+        self.yfinance = YFinanceClient()
+        self.finnhub = None
+        if self.settings.finnhub_api_key:
+            try:
+                self.finnhub = FinnhubClient()
+                logger.info("orchestrator_finnhub_client_initialized")
+            except (ImportError, ValueError) as exc:
+                logger.warning("orchestrator_finnhub_client_unavailable", error=str(exc))
         self.gemini = GeminiClient()
         self.alerts = AlertService()
         self.watchlist = getattr(self.settings, "watchlist", ["SNOW"])
@@ -56,7 +66,7 @@ class Orchestrator:
             scan_run = repo.create_scan_run(started_at=started, metadata_json={"interval": self.settings.scan_interval_minutes})
 
             scanner = MonitoringScanner(self.moomoo, self.massive, repo)
-            overreaction = OverreactionAnalyzer(self.massive, self.gemini)
+            overreaction = OverreactionAnalyzer(self.yfinance, self.finnhub, self.gemini)
             volatility = VolatilityAnalyzer(self.massive)
             trends = TrendAnalyzer(self.massive)
             events = EventRiskAnalyzer(self.massive)
@@ -168,17 +178,18 @@ class Orchestrator:
 
             for candidate in all_candidates:
                 candidate_symbol = self._to_analysis_symbol(candidate.symbol)
-                cache_key = (candidate_symbol, candidate.option_type)
-                analysis = analysis_cache[cache_key]
+                analysis_cache_key = (candidate_symbol, candidate.option_type)
+                recommendation_cache_key = candidate.option_symbol
+                analysis = analysis_cache[analysis_cache_key]
 
                 # Portfolio risk evaluation temporarily disabled.
                 risk = None
 
-                if cache_key in recommendation_cache:
-                    recommendation = recommendation_cache[cache_key]
+                if recommendation_cache_key in recommendation_cache:
+                    recommendation = recommendation_cache[recommendation_cache_key]
                 else:
                     recommendation = recommender.recommend(candidate, analysis, risk)
-                    recommendation_cache[cache_key] = recommendation
+                    recommendation_cache[recommendation_cache_key] = recommendation
 
                 rejected = recommendation.recommendation == "Avoid"
                 rejection_reason = None if not rejected else analysis.event_risk_reason

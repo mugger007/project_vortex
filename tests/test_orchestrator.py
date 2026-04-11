@@ -106,7 +106,7 @@ def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
             return [candidate]
 
     class FakeOverreaction:
-        def __init__(self, massive, gemini) -> None:
+        def __init__(self, yfinance, finnhub, gemini) -> None:
             pass
 
         def analyze(self, symbol: str, option_type: str = "C") -> tuple[float, str]:
