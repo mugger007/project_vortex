@@ -11,6 +11,8 @@ from app.services import orchestrator as orchestrator_module
 def test_orchestrator_run_scan_cycle_unit(monkeypatch) -> None:
     class FakeSettings:
         scan_interval_minutes = 5
+        finnhub_api_key = None
+        watchlist = ["SPY"]
 
     class FakeMoomoo:
         def get_option_positions(self) -> list[dict]:
