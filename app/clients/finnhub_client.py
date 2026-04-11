@@ -14,26 +14,26 @@ from app.config import get_settings
 
 
 class FinnhubClient:
-    """Adapter for Finnhub API news access with rate limiting (60 calls/minute)."""
+    """Finnhub news adapter with 60 calls/minute sliding-window throttling."""
 
-    # Rate limit: 60 API calls per minute = 1 call per second
+    # Free-tier guardrail: 60 calls per 60-second window.
     RATE_LIMIT_CALLS = 60
     RATE_LIMIT_WINDOW_SECONDS = 60
 
     def __init__(self, api_key: str | None = None):
         """Initialize Finnhub client with API key and rate limiter."""
-        
+
         # Use provided api_key or fetch from config
         if api_key is None:
             settings = get_settings()
             api_key = settings.finnhub_api_key
-        
+
         if not api_key:
             raise ValueError(
                 "Finnhub API key not provided and not found in FINNHUB_API_KEY environment variable. "
                 "Please set FINNHUB_API_KEY or pass api_key to FinnhubClient()."
             )
-        
+
         self.client = finnhub.Client(api_key=api_key)
         # Track API call timestamps for rate limiting (sliding window)
         self._call_timestamps: deque[float] = deque(maxlen=self.RATE_LIMIT_CALLS)
@@ -44,21 +44,22 @@ class FinnhubClient:
         # Remove timestamps older than the rate limit window
         while self._call_timestamps and (now - self._call_timestamps[0]) > self.RATE_LIMIT_WINDOW_SECONDS:
             self._call_timestamps.popleft()
-        
+
         # If we've reached the call limit, wait until the oldest call expires
         if len(self._call_timestamps) >= self.RATE_LIMIT_CALLS:
             oldest_call = self._call_timestamps[0]
             sleep_duration = self.RATE_LIMIT_WINDOW_SECONDS - (now - oldest_call)
             if sleep_duration > 0:
                 time.sleep(sleep_duration)
-        
+
         # Record this call
         self._call_timestamps.append(time.time())
 
     def get_news(self, symbol: str, limit: int = 15) -> str:
-        """Fetch recent company news for the symbol and return as JSON string.
-        Only includes articles published within the last 24 hours, sorted by recency.
-        Respects rate limit of 60 calls/minute.
+        """Return normalized Finnhub company news JSON for the last 24 hours.
+
+        Results are sorted newest-first and filtered to recent items only.
+        On errors, a structured JSON payload is returned for easier debugging.
         """
         try:
             window_from, window_to = self._news_window()

@@ -18,7 +18,7 @@ Each module under `app/` includes a short file-level description comment, and ke
 
 - **Massive REST API** (market data aggregator):
   - Historical OHLC bars for equities and fundamentals (supports day/week/month aggregations, up to 730 days)
-  - Recent news articles (fetched with limit parameter)
+  - Recent news articles (client supports this endpoint, but overreaction analysis now uses yfinance RSS + Finnhub)
   - Dividend calendar entries per ticker
   - Automatic throttling at 5 calls/minute with exponential backoff retry logic
 
@@ -26,6 +26,12 @@ Each module under `app/` includes a short file-level description comment, and ke
   - Historical OHLCV data (1m, 5m, hourly, daily, etc.) for any tradeable symbol
   - Fast info snapshots for latest spot prices and market metadata
   - Index data for market regime (`^VIX`, `^GSPC`)
+  - Yahoo Finance RSS news headlines with 24-hour recency filtering and optional article excerpt extraction
+
+- **Finnhub REST API** (secondary news source):
+  - Company news endpoint merged with yfinance RSS for overreaction analysis
+  - 24-hour recency filtering
+  - Sliding-window throttling at 60 calls/minute
 
 - **Alpha Vantage REST API** (fundamental data):
   - Earnings calendar entries (parsed from CSV response, filtered by symbol)
@@ -44,8 +50,10 @@ weekly-options-scanner/
 |   |-- scheduler.py
 |   |-- clients/
 |   |   |-- alpha_vantage_client.py
+|   |   |-- finnhub_client.py
 |   |   |-- massive_client.py
 |   |   |-- moomoo_client.py
+|   |   |-- yfinance_client.py
 |   |   `-- gemini_client.py
 |   |-- scanner/
 |   |   `-- monitoring_scanner.py
@@ -108,8 +116,9 @@ weekly-options-scanner/
 - `app/clients/massive_client.py`: Massive REST transport, throttling/retry, and market-data fetch methods.
 - `app/clients/moomoo_client.py`: OpenD quote/trade contexts and wrappers for funds/positions/Greeks/options/snapshot.
 - `app/clients/alpha_vantage_client.py`: Alpha Vantage earnings-calendar adapter.
+- `app/clients/finnhub_client.py`: Finnhub company-news adapter with 60 RPM throttling and 24-hour filtering.
 - `app/clients/gemini_client.py`: Gemini integration for narrative/synthesis generation.
-- `app/clients/yfinance_client.py`: yfinance adapter for intraday, daily, and fast-info spot lookups.
+- `app/clients/yfinance_client.py`: yfinance adapter for history/spot plus Yahoo RSS news ingestion.
 - `app/scanner/monitoring_scanner.py`: option-universe pull + filtering pipeline over provider clients.
 - `app/analysis/`: signal and market-state analytics (regime, volatility, trends, event risk, overreaction).
 - `app/risk/portfolio_engine.py`: portfolio-level risk evaluation and gating logic.
@@ -133,7 +142,7 @@ weekly-options-scanner/
 - `tests/live/test_massive_live.py`: live Massive validation for bars/news/calendar/dividends/index bars.
 - `tests/live/test_alpha_vantage_live.py`: live Alpha Vantage earnings calendar validation.
 - `tests/live/test_monitoring_scanner_live.py`: live scanner smoke validation with real Moomoo option-chain/snapshot flow.
-- `tests/live/test_overreaction_live.py`: live overreaction analyzer validation using Massive news + Gemini output.
+- `tests/live/test_overreaction_live.py`: live overreaction analyzer validation using yfinance RSS (+ optional Finnhub) + Gemini output.
 - `tests/live/test_trends_live.py`: live trend analyzer validation.
 - `tests/live/test_volatility_live.py`: live volatility analyzer validation.
 - `tests/live/test_event_risk_live.py`: live event-risk analyzer validation.

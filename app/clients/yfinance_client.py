@@ -16,7 +16,11 @@ import yfinance as yf
 
 
 class YFinanceClient:
-    """Thin adapter around yfinance for history, fast-info, spot price, and news access."""
+    """Adapter around yfinance and Yahoo Finance RSS helpers.
+
+    This client provides historical/spot market data from yfinance and
+    near-real-time headline ingestion from Yahoo Finance RSS.
+    """
 
     def get_history(self, symbol: str, period: str, interval: str) -> pd.DataFrame:
         """Return a historical OHLCV DataFrame for the requested symbol and window."""
@@ -37,8 +41,10 @@ class YFinanceClient:
         return last_price
 
     def get_news(self, symbol: str, limit: int = 15) -> str:
-        """Fetch recent news for the symbol via Yahoo Finance RSS and return as JSON string.
-        Only includes articles published within the last 24 hours.
+        """Fetch recent Yahoo Finance RSS headlines as a normalized JSON string.
+
+        Only articles inside the last 24 hours are included, sorted by recency.
+        On fetch/parse failures this method returns "[]" to keep callers resilient.
         """
         try:
             feed_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&lang=en-US"

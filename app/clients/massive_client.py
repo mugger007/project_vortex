@@ -89,12 +89,13 @@ class MassiveClient:
 
         Args:
             symbol: Stock ticker symbol.
-            timespan: Bar size ('day', 'week', 'month', etc.). Defaults to 'day'.
+            timespan: Bar size ('day', 'week', 'month', etc.). Defaults to daily bars.
             limit: Number of bars to request.
             from_date: Start date (optional; defaults to lookback from to_date).
             to_date: End date (optional; defaults to previous market day).
 
-        The API's 730-day historical limit applies regardless of timespan.
+        If `from_date` is omitted, a simple day-based lookback buffer (`1.5 * limit`)
+        is used. The API's 730-day historical limit always applies.
         """
         resolved_to = self._coerce_date(to_date) if to_date is not None else self._previous_market_day()
         requested_limit = max(1, int(limit or 1))

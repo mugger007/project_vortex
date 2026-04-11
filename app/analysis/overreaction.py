@@ -15,13 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 class OverreactionAnalyzer:
+    """Estimate news-driven overreaction probability for short-premium decisions.
+
+    News is merged from yfinance (Yahoo RSS) and, when configured, Finnhub API.
+    Each merged article is tagged with an internal `_source` marker so downstream
+    logs/tests can trace article provenance.
+    """
+
     def __init__(self, yfinance: YFinanceClient, finnhub: FinnhubClient | None, gemini: GeminiClient) -> None:
         self.yfinance = yfinance
         self.finnhub = finnhub
         self.gemini = gemini
 
     def _merge_news_sources(self, symbol: str, limit: int = 15) -> str:
-        """Fetch and merge news from both yfinance and finnhub (if available)."""
+        """Fetch, tag, and merge news from available providers.
+
+        `_source` values:
+        - `yfinance_rss` for Yahoo Finance RSS items
+        - `finnhub_api` for Finnhub API items
+        """
         combined_articles = []
 
         # Fetch from yfinance (Yahoo Finance RSS feed)
@@ -70,6 +82,7 @@ class OverreactionAnalyzer:
         return json.dumps(sorted_articles, indent=2) if sorted_articles else "[]"
 
     def analyze(self, symbol: str, option_type: str = "C") -> tuple[float, str]:
+        """Return overreaction likelihood and concise rationale from Gemini."""
         news_json = self._merge_news_sources(symbol=symbol, limit=15)
         normalized_option_type = (option_type or "C").strip().upper()
         option_context = (
